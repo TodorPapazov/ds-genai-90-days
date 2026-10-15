@@ -1,0 +1,21 @@
+const n=+new URLSearchParams(location.search).get('d')||1,f='days/day'+pad(n)+'/';
+fetch(f+'lesson.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(L=>{
+ document.title=`Day ${n}: ${L.title}`;title.textContent=`Day ${n}: ${L.title}`;
+ done.checked=!!getP()[n];done.onchange=()=>setP(n,done.checked);
+ let h=`<section><h2>💡 Concept</h2><p>${L.concept}</p>`;
+ if(L.stats)h+=`<div class="stats">${L.stats.map(s=>`<div><small>${s[0]}</small><b>${s[1]}</b></div>`).join('')}</div>`;
+ h+=`</section><section><h2>🛠 Hands-on</h2><ol>${L.steps.map(s=>`<li>${s}</li>`).join('')}</ol></section>`;
+ h+=`<section><h2>💻 Code</h2>${(L.snippets||[]).map((s,i)=>`<div class="code"><div class="ch"><span>${s.title} <small>${s.lang}</small></span><button data-c="${i}">Copy</button></div><pre><code>${highlight(s.code,s.lang)}</code></pre></div>`).join('')}</section>`;
+ h+=`<section><h2>🖨 Printables</h2><div class="imgs">${(L.images||[]).map(i=>`<figure><img src="${f+i[0]}" alt="${i[1]}" loading="lazy"><figcaption>${i[1]}</figcaption></figure>`).join('')}</div>`;
+ if(L.pdf)h+=`<p><a class="btn" href="${f+L.pdf}" download>⬇ Download PDF</a> <a class="btn" href="${f+L.pdf}" target="_blank">Open PDF</a></p>`;
+ h+=`</section><section><h2>🎧 Podcast</h2><div id="audio"></div><details open><summary>Script</summary>${L.podcast.map(p=>`<p>${p}</p>`).join('')}</details></section>`;
+ h+=`<section><h2>📣 X / LinkedIn post</h2><pre class="post">${esc(L.post)}</pre><button id="cp">Copy post</button></section>`;
+ content.innerHTML=h;
+ content.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>copyText(L.snippets[b.dataset.c].code,b));
+ cp.onclick=()=>copyText(L.post,cp);
+ if(L.audio)fetch(f+L.audio,{method:'HEAD'}).then(r=>{if(r.ok)audio.innerHTML=`<audio controls src="${f+L.audio}"></audio>`;});
+ content.querySelectorAll('.imgs img').forEach(i=>i.onclick=()=>{lbimg.src=i.src;lb.hidden=false;});
+}).catch(()=>{title.textContent=`Day ${n} isn't published yet`;});
+lbclose.onclick=()=>lb.hidden=true;lb.onclick=e=>{if(e.target===lb)lb.hidden=true};
+document.onkeydown=e=>{if(e.key==='Escape')lb.hidden=true};
+lbprint.onclick=()=>{const w=open('');w.document.write(`<img src="${lbimg.src}" style="width:100%" onload="print()">`);w.document.close();};
