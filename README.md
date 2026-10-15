@@ -1,5 +1,5 @@
 # DS + Gen AI · 90 Days (lesson site)
-Static site (plain HTML/CSS/JS, no build step). It holds the 12-week roadmap, the day cards, search, a progress tracker (saved in browser localStorage), and per-day lessons with code, printables, PDF, podcast and social post.
+Static site (plain HTML/CSS/JS, no build step). It holds the 12-week roadmap, the day cards, search, a progress tracker (saved in browser localStorage), and per-day lessons with code, printables, PDF, and podcast.
 
 ## Run locally
 `python -m http.server 8000` → http://localhost:8000 (fetch() needs a server; opening the file with file:// will not work).

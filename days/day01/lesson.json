@@ -94,7 +94,6 @@
   "Now let's recap your hands-on. First, create your GitHub repo and your conda environment. Then, in your Day One notebook, simulate five thousand claims using numpy's lognormal function, and add a member ID and a plan type, H M O or P P O. Compute the mean, median, standard deviation, skew, and percentiles, overall and by plan type, using group by and describe. Flag outliers with the one and a half I Q R rule. Plot a histogram of the raw amounts next to the log transformed amounts. Write three plain-English insights, the way you'd explain them to a manager. Then commit, push, and share your post. Learning in public keeps you accountable, and it builds your portfolio at the same time. For a stretch goal, run the same statistics in Snowflake with median and percentile cont, and compare them to pandas.",
   "Tomorrow, we move from describing data to making decisions with it. We'll cover probability distributions and the foundations of hypothesis testing: what a p-value really means, and how to tell a real difference from random noise. Great work today. See you on Day Two."
  ],
- "post": "Day 1 of my 90-day journey from Data Analyst to Data Scientist with Gen AI 🚀\n\nToday: descriptive statistics on skewed healthcare claims data. When data is right-skewed, the mean misleads; the median and a log transform tell the real story.\n\nCode + notebook 👉 https://github.com/TodorPapazov/ds-genai-90-days\n\n#DataScience #Python #GenAI #LearningInPublic",
  "zip": "day01_all_materials.zip",
  "md": "lesson.md"
 }

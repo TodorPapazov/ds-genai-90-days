@@ -10,10 +10,8 @@ fetch(f+'lesson.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(L=>{
  if(L.pdf)h+=`<p><a class="btn" href="${f+L.pdf}" download>⬇ Download PDF</a> <a class="btn" href="${f+L.pdf}" target="_blank">Open PDF</a></p>`;
  h+=`</section><section><h2>🎧 Podcast</h2><div id="audio"></div><details open><summary>Script</summary>${L.podcast.map(p=>`<p>${p}</p>`).join('')}</details></section>`;
  h+=`<section><h2>⬇ Downloads</h2><ul class="dl">${L.zip?`<li><a href="${f+L.zip}" download><b>All materials (.zip)</b></a></li>`:''}${L.md?`<li><a href="${f+L.md}" download>Lesson (Markdown)</a></li>`:''}${L.pdf?`<li><a href="${f+L.pdf}" download>Lesson PDF</a></li>`:''}${L.audio?`<li><a href="${f+L.audio}" download>Podcast MP3</a></li>`:''}${(L.images||[]).map(i=>`<li><a href="${f+i[0]}" download>${i[1]} (PNG)</a></li>`).join('')}</ul></section>`;
- h+=`<section><h2>📣 X / LinkedIn post</h2><pre class="post">${esc(L.post)}</pre><button id="cp">Copy post</button></section>`;
  content.innerHTML=h;
  content.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>copyText(L.snippets[b.dataset.c].code,b));
- cp.onclick=()=>copyText(L.post,cp);
  if(L.audio)fetch(f+L.audio,{method:'HEAD'}).then(r=>{if(r.ok)audio.innerHTML=`<audio controls preload="metadata" src="${f+L.audio}"></audio><p><a class="btn" href="${f+L.audio}" download>⬇ Download MP3</a></p>`;});
  content.querySelectorAll('.imgs img').forEach(i=>i.onclick=()=>{lbimg.src=i.src;lb.hidden=false;});
 }).catch(()=>{title.textContent=`Day ${n} isn't published yet`;});
