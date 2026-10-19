@@ -1,0 +1,172 @@
+# Day 5: EDA with matplotlib and seaborn: which chart answers which question
+
+## Concept
+Days 1 to 4 were about numbers; today is about pictures. Exploratory data analysis (EDA) starts with three checks before any chart: shape and dtypes, missing values, and duplicates. Then you match each question to the chart that answers it best: a histogram for how one number is distributed, a box plot for comparing groups, a bar chart for counts, a scatter plot for how two numbers relate (color adds a third), a correlation heatmap for which numbers move together, and a line chart for change over time. On a simulated table of 2,000 patients, annual cost is right-skewed (mean $9,120 vs. median $4,816), so you plot it on a log scale; smokers' median cost is about 2.7x non-smokers'. The trap: Medicare Advantage looks like the most expensive plan, but its members are much older (median age 75 vs. 43), and among patients 65+ the PPO is actually higher. A gap between groups is a lead, not a conclusion. Write every chart title as a finding.
+
+## Key numbers
+- **Rows (after removing 12 duplicates):** 2,012 to 2,000
+- **BMI missing:** 7.1%
+- **Annual cost: mean vs. median:** $9,120 vs. $4,816
+- **Median cost: smokers vs. non-smokers:** $11,117 vs. $4,124 (2.7x)
+- **Spearman with log cost:** age 0.48, chronic conditions 0.45, BMI 0.13
+- **Median cost, 65+ only:** PPO $10,585 vs. Medicare Adv $8,913
+
+## Hands-on
+1. In your repo, create day05/ and open day05/eda_patients.ipynb in VS Code; conda activate ds90 and conda install seaborn.
+2. Build the simulated patient table and save patients.csv (snippet 1).
+3. Run the three checks: shape and dtypes, share missing, duplicates (snippet 2). Expect 2,012 rows, 12 duplicates and about 7% missing BMI. Drop the duplicates.
+4. Run describe() and compare mean vs. median annual cost. Expect about $9,120 vs. $4,816.
+5. Histogram of annual cost, raw and on a log scale, side by side (snippet 3).
+6. Box plots of cost by smoker and by plan on a log axis (snippet 4). Note the medians.
+7. Scatter of age vs. cost colored by smoker, a Spearman heatmap, and a monthly admissions line chart (snippet 5).
+8. Check the plan trap: median cost by plan within age bands (pd.cut on age, then groupby). Which plan is higher for 65+?
+9. Rewrite every chart title as a finding, then add a markdown cell with 5 plain-language findings and the caveat that the data is simulated.
+10. Commit and push (snippet 6).
+11. Stretch: in Snowflake, compute the median cost by plan within age bands (snippet 7).
+
+## Code
+### 1. Build the simulated patient table
+```python
+import numpy as np
+import pandas as pd
+
+# Simulated patient-level dataset: 2,000 patients, one row each (plus a few duplicates)
+rng = np.random.default_rng(5)
+n = 2000
+age = rng.integers(18, 86, n)
+smoker = rng.random(n) < 0.18
+bmi = np.clip(rng.normal(29, 5.5, n), 16, 55).round(1)
+chronic = rng.poisson(0.2 + age / 35)
+plan = np.where(age >= 65, rng.choice(["Medicare Adv", "PPO"], n, p=[0.8, 0.2]),
+                rng.choice(["HMO", "PPO"], n, p=[0.55, 0.45]))
+log_cost = (7.0 + 0.018 * age + 0.03 * (bmi - 29) + 0.9 * smoker
+            + 0.25 * chronic + rng.normal(0, 0.8, n))
+month = rng.choice(np.arange(1, 13), n, p=np.array([12, 11, 9, 8, 7, 6, 6, 7, 8, 8, 9, 9]) / 100)
+df = pd.DataFrame({
+    "patient_id": np.arange(100001, 100001 + n),
+    "age": age, "sex": rng.choice(["F", "M"], n), "plan": plan,
+    "bmi": bmi, "smoker": np.where(smoker, "yes", "no"),
+    "chronic_conditions": chronic,
+    "er_visits": rng.poisson(0.2 + 0.25 * chronic + 0.4 * smoker),
+    "annual_cost": np.exp(log_cost).round(2),
+    "admit_month": pd.to_datetime([f"2025-{m:02d}-01" for m in month]),
+})
+df.loc[rng.random(n) < 0.06, "bmi"] = np.nan                         # missing BMI
+df = pd.concat([df, df.sample(12, random_state=1)], ignore_index=True)  # duplicate rows
+df.to_csv("patients.csv", index=False)
+print(df.shape)
+```
+
+### 2. Look before you plot: shape, dtypes, missing, duplicates
+```python
+# Step 1 of every EDA: look before you plot
+print(df.shape)                                  # rows, columns
+print(df.dtypes)                                 # is each column the type you expect?
+print(df.isna().mean().round(3))                 # share missing per column
+print("duplicate rows:", df.duplicated().sum())
+df = df.drop_duplicates().reset_index(drop=True)
+print(df.describe().round(1).T)                  # min, max, mean, quartiles
+print(df["plan"].value_counts(), df["smoker"].value_counts(normalize=True))
+```
+
+### 3. One number: histogram, raw vs. log scale
+```python
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_theme(style="whitegrid")
+
+# Question: how is ONE number distributed?  Chart: histogram
+fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+sns.histplot(df["annual_cost"], bins=50, ax=ax[0])
+ax[0].set_title("Annual cost: raw (long right tail)")
+sns.histplot(df["annual_cost"], bins=50, log_scale=True, ax=ax[1])
+ax[1].set_title("Annual cost: log scale (much easier to read)")
+plt.tight_layout(); plt.show()
+print("mean", df["annual_cost"].mean().round(0), "median", df["annual_cost"].median().round(0))
+```
+
+### 4. Groups: box plots
+```python
+# Question: how do GROUPS compare?  Chart: box plot (log y for skewed cost)
+fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+sns.boxplot(data=df, x="smoker", y="annual_cost", log_scale=True, ax=ax[0])
+ax[0].set_title("Cost by smoking status")
+order = ["HMO", "PPO", "Medicare Adv"]
+sns.boxplot(data=df, x="plan", y="annual_cost", order=order, log_scale=True, ax=ax[1])
+ax[1].set_title("Cost by plan")
+plt.tight_layout(); plt.show()
+print(df.groupby("smoker")["annual_cost"].median().round(0))
+print(df.groupby("plan")["annual_cost"].agg(["count", "median"]).round(0))
+```
+
+### 5. Relationships, correlations and time
+```python
+# Question: how do TWO numbers relate?  Chart: scatter (color = a third variable)
+ax = sns.scatterplot(data=df, x="age", y="annual_cost", hue="smoker", alpha=0.5, s=15)
+ax.set_yscale("log"); ax.set_title("Cost rises with age; smokers sit higher at every age")
+plt.show()
+
+# Question: which numbers move TOGETHER?  Chart: correlation heatmap
+num = df[["age", "bmi", "chronic_conditions", "er_visits", "annual_cost"]].copy()
+num["log_cost"] = np.log(num.pop("annual_cost"))
+sns.heatmap(num.corr(method="spearman"), annot=True, fmt=".2f", cmap="RdBu_r", vmin=-1, vmax=1)
+plt.title("Spearman correlations"); plt.show()
+
+# Question: what changes OVER TIME?  Chart: line
+monthly = df.groupby("admit_month").size().rename("admissions").reset_index()
+sns.lineplot(data=monthly, x="admit_month", y="admissions", marker="o")
+plt.title("Admissions by month, 2025 (winter peak)"); plt.xticks(rotation=45); plt.show()
+```
+
+### 6. Push to GitHub
+```bash
+git add day05
+git commit -m "Day 5: EDA with matplotlib and seaborn"
+git push
+```
+
+### Stretch: Snowflake SQL (median cost by plan within age bands)
+```sql
+SELECT CASE WHEN age < 45 THEN '18-44'
+            WHEN age < 65 THEN '45-64'
+            ELSE '65+' END          AS age_band,
+       plan,
+       COUNT(*)                     AS patients,
+       MEDIAN(annual_cost)          AS median_cost,
+       AVG(annual_cost)             AS mean_cost
+FROM patients
+GROUP BY age_band, plan
+ORDER BY age_band, median_cost DESC;
+```
+
+## Printables
+- Cheat sheet: `day05_v1_cheat_sheet.png`
+- Infographic: `day05_v2_infographic.png`
+- Code worksheet: `day05_v3_worksheet.png`
+- Practice quiz: `day05_v4_quiz.png`
+- PDF: `day05_lesson.pdf`
+
+## Podcast script
+(Audio: `day05_podcast.mp3`)
+
+Hey Todor, welcome to Day Five. For the last few days we've been working with numbers. Means, medians, p-values, confidence intervals, sample sizes. Today we switch to pictures. We're doing exploratory data analysis, or E D A, with matplotlib and seaborn. And the big idea for today is simple. Every question you ask about your data has a chart that answers it best. Your job is to match the question to the chart.
+
+Before we draw anything, though, we look. The first three checks on any new dataset are the shape and data types, the missing values, and the duplicates. In today's simulated patient table you'll find two thousand and twelve rows. Twelve of them are exact duplicates, so you really have two thousand patients. About seven percent of the B M I values are missing. None of that shows up in a pretty chart, and all of it can quietly break a model later. So look first, then plot.
+
+Now the matching game. If your question is how one number is distributed, use a histogram. Plot annual cost and you'll see a tall spike on the left and a long tail stretching out to the right. The mean is about nine thousand one hundred dollars, but the median is only about four thousand eight hundred. A few very expensive patients pull the mean up. Switch the axis to a log scale and suddenly the shape is easy to read. Just remember to say log scale on the axis label, so nobody misreads it.
+
+If your question is how groups compare, use a box plot. Put smokers next to non-smokers and the gap jumps off the page. The median smoker costs about eleven thousand dollars a year, versus about four thousand one hundred for non-smokers. That's roughly two point seven times as much.
+
+If your question is how two numbers relate, use a scatter plot. Put age on the bottom, cost on the side, and color each dot by smoking status. Now you're seeing three variables in one picture. Cost rises with age, and the smokers sit higher at almost every age.
+
+If your question is which numbers move together, use a correlation heatmap. We use Spearman correlation today, which works on ranks, so it handles skewed data and outliers better than the usual Pearson version. Age and chronic conditions both line up with cost at around point four five to point five. B M I barely registers in this dataset.
+
+And if your question is what changes over time, use a line chart. Admissions in our data peak in January, drop to a low in June, and climb again toward winter.
+
+Here's the trap I want you to remember. When you plot cost by insurance plan, Medicare Advantage looks like the most expensive plan by far. Its median is about eight thousand nine hundred dollars, versus about thirty six hundred for the H M O. It would be easy to tell a manager that the plan is the problem. But the median Medicare Advantage member is seventy five years old, compared with forty three for everyone else. When you compare only patients sixty five and older, the P P O is actually higher. Age was hiding behind the plan. A gap between groups is a lead, not a conclusion. Always ask what else is different about those groups.
+
+One last habit that will make your work stand out in interviews. Write chart titles as findings, not variable names. Instead of annual cost by smoker, write smokers cost about two point seven times more. A hiring manager reading your notebook should get the story from the titles alone.
+
+For your hands-on today, build the patient table, run the three checks, then make a histogram, two box plots, a scatter plot, a heatmap, and a line chart. Rewrite every title as a finding, add five plain sentences of findings at the end, and push it all to GitHub.
+
+Tomorrow we turn that scatter plot into a model. We'll cover correlation and simple linear regression, and learn how to read a slope, an R squared, and a residual plot, and why correlation is not causation. See you on Day Six.
