@@ -1,0 +1,131 @@
+{
+ "day": 10,
+ "title": "Time series EDA: rolling means, seasonality, and telling a real shift from a bumpy week",
+ "concept": "Today you explore <b>731 days of simulated emergency department (ED) visits</b> at one hospital (Jan 2024 to Dec 2025, seed 10; mean 189.2 visits a day). First the plumbing: parse dates into a <b>DatetimeIndex</b> and call <b>asfreq(\"D\")</b> to expose the 9 days missing from the extract, then interpolate them, because a missing day silently shortens every rolling window. A <b>7-day rolling mean</b> cancels the weekday cycle (each window holds one of every weekday) and reveals the slower story: a winter flu peak near 217 visits a day, a summer low near 161, and slow growth. <b>Seasonality</b>: Monday runs 12% above an average day and weekends about 7% below; <b>autocorrelation</b> at lag 7 (0.70) beats lag 1 (0.51), so last Monday predicts next Monday better than yesterday does. <b>STL</b> splits the series into trend, weekly seasonal and remainder. The real question: a new urgent care opened on Sep 1, 2025. Comparing fall with spring mixes in flu season, so compare <b>year over year</b>: each week divided by the same week last year. That ratio ran about 1.07 from January to August; after Sep 1 all 17 weeks fell below the center line and 9 fell below the lower <b>control limit</b> (0.94). One low week in March stayed inside the limits: a bumpy week, not a shift. A <b>run rule</b> (8+ weeks on one side of the center) fires by late October. Sep-Dec 2025 ran 5.1% below 2024 (Welch p = 0.001) after running about 7% above, a swing of roughly 12 points. The timing fits the urgent care, but this is observational. Bridge to ML: build <b>lag features</b> with <code>shift()</code>, <b>split by time</b> (never shuffle), and set baselines to beat. On Nov-Dec 2025, \"same day last week\" has an MAE of 14.9 visits vs. 18.2 for the training mean.",
+ "stats": [
+  [
+   "Days / visits",
+   "731 days (9 missing, interpolated) / mean 189.2 a day, SD 25.0"
+  ],
+  [
+   "Flu season",
+   "busiest month Dec 2024, about 217 a day; summer low about 161"
+  ],
+  [
+   "Weekday index",
+   "Monday 1.12; Saturday 0.93, Sunday 0.92"
+  ],
+  [
+   "Autocorrelation",
+   "lag 1 = 0.51, lag 7 = 0.70, lag 14 = 0.69"
+  ],
+  [
+   "STL",
+   "weekly component holds about 22% of daily variance"
+  ],
+  [
+   "YoY (monthly)",
+   "Jan-Aug 2025 +3% to +9%; Sep-Dec 2025 -4% to -7%"
+  ],
+  [
+   "Control chart",
+   "baseline ratio 1.07, limits 0.94 to 1.21; 9 of 17 weeks below LCL after Sep 1"
+  ],
+  [
+   "Run rule",
+   "17 weeks in a row below center; 8th week (flagged) Oct 26, 2025"
+  ],
+  [
+   "Sep-Dec 2024 vs 2025",
+   "197.4 vs 187.3 a day, -5.1%, Welch p = 0.001"
+  ],
+  [
+   "Baseline MAE (Nov-Dec 2025)",
+   "training mean 18.2; same day last week 14.9; trailing 7-day mean 16.7"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day10/</code> and open <code>day10/ed_time_series.ipynb</code> in VS Code with <code>conda activate ds90</code>.",
+  "Run snippet 1 to simulate <code>ed_visits.csv</code> (seed 10). Reload it with <code>parse_dates</code>, set the date index, and confirm <code>asfreq(\"D\")</code> finds 9 missing days. Interpolate them.",
+  "Plot daily visits with a 7-day and a 28-day centered rolling mean (snippet 2). Mark Sep 1, 2025 with a vertical line.",
+  "Resample to weekly totals (<code>W-SUN</code>) and monthly means. Build the weekday index and print autocorrelation at lags 1, 7 and 14. Write one sentence on what lag 7 tells you.",
+  "Run STL with <code>period=7</code> (snippet 3) and plot the components. Compute the monthly year-over-year % change and note the month it turns negative.",
+  "Build the weekly year-over-year ratio and control limits from the Jan-Aug 2025 baseline (snippet 4). Count weeks below the LCL after Sep 1 and find the longest run below center.",
+  "Compare Sep-Dec 2025 with Sep-Dec 2024 (daily means and a Welch t-test). Write down why this beats comparing fall 2025 with spring 2025.",
+  "Create lag and rolling features with <code>shift()</code>, split at Nov 1, 2025, and compute the MAE of the three baselines (snippet 5).",
+  "Add a Findings markdown cell: 5 plain-language bullets an ED operations manager could act on, plus a limits bullet (simulated, observational, other possible causes).",
+  "Commit and push (snippet 6).",
+  "<b>Stretch:</b> load <code>ed_visits.csv</code> into Snowflake and compute a 7-day moving average, weekday index and YoY weekly ratio with window functions (snippet 7)."
+ ],
+ "snippets": [
+  {
+   "title": "1. Simulate ED visits, load with a date index, find the gaps",
+   "lang": "python",
+   "code": "import numpy as np\nimport pandas as pd\n\n# Simulate 2 years of daily emergency department (ED) visits at one hospital (fixed seed)\nrng = np.random.default_rng(10)\ndates = pd.date_range(\"2024-01-01\", \"2025-12-31\", freq=\"D\")\nt = np.arange(len(dates))\ndow_eff = np.array([1.12, 1.04, 1.00, 0.99, 1.00, 0.93, 0.92])[dates.dayofweek]   # Mon busiest, weekend quieter\nflu = 1 + 0.14 * np.cos(2 * np.pi * (dates.dayofyear - 20) / 365.25)            # winter peak, late January\ntrend = 1 + 0.0002 * t                                                         # slow growth, about 7% a year\nshift = np.where(dates >= \"2025-09-01\", 0.90, 1.0)                              # new urgent care opens Sep 1, 2025\nvisits = rng.poisson(180 * dow_eff * flu * trend * shift)\ned = pd.DataFrame({\"visit_date\": dates, \"visits\": visits})\ned = ed.drop(rng.choice(len(ed), 9, replace=False))      # 9 days missing from the extract\ned.to_csv(\"ed_visits.csv\", index=False)\n\n# Load it the right way: parse dates, set a DatetimeIndex, then check for gaps\ned = pd.read_csv(\"ed_visits.csv\", parse_dates=[\"visit_date\"]).set_index(\"visit_date\").sort_index()\nfull = ed.asfreq(\"D\")                                    # re-inserts the missing days as NaN\nprint(len(ed), \"rows,\", full[\"visits\"].isna().sum(), \"missing days\")\nfull[\"visits\"] = full[\"visits\"].interpolate()            # fill gaps from the neighbours\nprint(full[\"visits\"].describe().round(1))"
+  },
+  {
+   "title": "2. Rolling means, resampling, weekday profile, autocorrelation",
+   "lang": "python",
+   "code": "# Smooth the daily noise: 7-day and 28-day rolling means (a 7-day window cancels the weekday cycle)\nfull[\"ma7\"] = full[\"visits\"].rolling(7).mean()\nfull[\"ma28\"] = full[\"visits\"].rolling(28, center=True).mean()\n\n# Resample to coarser grains: weekly totals and monthly averages\nweekly = full[\"visits\"].resample(\"W-SUN\").sum().iloc[1:-1]          # drop partial first/last weeks\nmonthly = full[\"visits\"].resample(\"MS\").mean()\nprint(monthly.round(1).head(12))\n\n# Seasonal profiles: day of week and month of year\ndow = full.groupby(full.index.day_name())[\"visits\"].mean()\ndow = dow.reindex([\"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\", \"Saturday\", \"Sunday\"])\nprint((dow / dow.mean()).round(3).rename(\"weekday index\"))\n\n# Autocorrelation: today vs 1 day ago and 7 days ago (weekly rhythm shows up at lag 7)\nfor lag in [1, 7, 14]:\n    print(f\"lag {lag:>2} autocorrelation = {full['visits'].autocorr(lag):.2f}\")"
+  },
+  {
+   "title": "3. STL decomposition and year-over-year change",
+   "lang": "python",
+   "code": "from statsmodels.tsa.seasonal import STL\n\n# STL splits the series into trend + weekly seasonal + remainder (robust to odd days)\nstl = STL(full[\"visits\"], period=7, seasonal=31, robust=True).fit()\ncomp = pd.DataFrame({\"trend\": stl.trend, \"seasonal\": stl.seasonal, \"resid\": stl.resid})\nprint(comp.describe().round(1))\nprint(\"share of daily variance in the weekly pattern:\",\n      round(comp[\"seasonal\"].var() / full[\"visits\"].var(), 2))\n\n# Year over year: compare the same month across years (removes seasonality without a model)\nyoy = monthly.pct_change(12) * 100\nprint(yoy.dropna().round(1).rename(\"YoY % change\"))"
+  },
+  {
+   "title": "4. Real shift or bumpy week: YoY control chart and run rule",
+   "lang": "python",
+   "code": "from scipy import stats\n\n# Real shift or a bumpy week? Compare each week with the same week last year (52 weeks back),\n# so the flu season and weekday mix cancel out, then put control limits on that ratio\nratio = (weekly / weekly.shift(52)).dropna()\nbase = ratio[:\"2025-08-31\"]                              # baseline: Jan to Aug 2025\ncenter, sd = base.mean(), base.std()\nucl, lcl = center + 3 * sd, center - 3 * sd\nprint(f\"baseline YoY ratio {center:.3f}, control limits {lcl:.3f} to {ucl:.3f}\")\nafter = ratio[\"2025-09-01\":]\nprint(\"weeks below the lower limit after Sep 1:\", (after < lcl).sum(), \"of\", len(after))\nprint(\"weeks below the center line after Sep 1:\", (after < center).sum(), \"of\", len(after))\nprint(\"baseline weeks outside the limits:\", ((base > ucl) | (base < lcl)).sum(), \"of\", len(base))\n\n# Run rule: 8 or more weeks in a row on one side of the center line signals a real shift\nbelow = (ratio < center).astype(int)\nrun = below.groupby((below != below.shift()).cumsum()).cumsum() * below\nprint(\"longest run below center:\", run.max(), \"weeks, first flagged week:\", run[run >= 8].index.min().date())\n\n# Same months, year over year (Sep-Dec 2025 vs Sep-Dec 2024)\na = full.loc[\"2025-09-01\":\"2025-12-31\", \"visits\"]\nb = full.loc[\"2024-09-01\":\"2024-12-31\", \"visits\"]\nprint(f\"Sep-Dec daily mean: 2024 {b.mean():.1f}, 2025 {a.mean():.1f}, change {100 * (a.mean() / b.mean() - 1):.1f}%\")\nprint(f\"Welch t-test p = {stats.ttest_ind(a, b, equal_var=False).pvalue:.2g}\")"
+  },
+  {
+   "title": "5. Bridge to ML: lag features, time split, baselines to beat",
+   "lang": "python",
+   "code": "# Bridge to ML: lag features and a time-based split (never shuffle time series)\nfeat = full[[\"visits\"]].copy()\nfeat[\"lag_1\"] = feat[\"visits\"].shift(1)\nfeat[\"lag_7\"] = feat[\"visits\"].shift(7)\nfeat[\"ma7_prev\"] = feat[\"visits\"].shift(1).rolling(7).mean()   # shift FIRST, so today never leaks in\ntrain, test = feat[:\"2025-10-31\"].dropna(), feat[\"2025-11-01\":]\n\n# Two baselines any model must beat: same day last week, and the trailing 7-day mean\nmae = lambda pred: (test[\"visits\"] - pred).abs().mean()\nprint(f\"MAE, training mean      : {mae(train['visits'].mean()):.1f} visits\")\nprint(f\"MAE, same day last week : {mae(test['lag_7']):.1f} visits\")\nprint(f\"MAE, trailing 7-day mean: {mae(test['ma7_prev']):.1f} visits\")"
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "git add day10\ngit commit -m \"Day 10: time series EDA on daily ED visits (rolling means, seasonality, YoY control chart)\"\ngit push"
+  },
+  {
+   "title": "Stretch: Snowflake SQL (moving average, weekday index, YoY ratio)",
+   "lang": "sql",
+   "code": "-- 7-day moving average and weekday index\nSELECT visit_date,\n       visits,\n       DAYNAME(visit_date)                                                         AS weekday,\n       ROUND(AVG(visits) OVER (ORDER BY visit_date\n                               ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 1)       AS ma7,\n       ROUND(AVG(visits) OVER (PARTITION BY DAYOFWEEK(visit_date))\n             / AVG(visits) OVER (), 3)                                             AS weekday_index\nFROM ed_visits\nORDER BY visit_date;\n\n-- weekly totals vs. the same week last year\nWITH wk AS (\n  SELECT DATE_TRUNC('week', visit_date) AS week_start, SUM(visits) AS visits\n  FROM ed_visits\n  GROUP BY 1\n)\nSELECT week_start,\n       visits,\n       LAG(visits, 52) OVER (ORDER BY week_start)                      AS visits_last_year,\n       ROUND(visits / NULLIF(LAG(visits, 52) OVER (ORDER BY week_start), 0), 3) AS yoy_ratio\nFROM wk\nORDER BY week_start;"
+  }
+ ],
+ "images": [
+  [
+   "day10_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day10_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day10_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day10_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day10_lesson.pdf",
+ "audio": "day10_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to Day 10. Yesterday we compared four hospital sites at once. Today we add the one thing almost every healthcare dashboard has, and that most stats courses skip: time. We're looking at two years of daily emergency department visits at one hospital, and the question is one you'll hear in real meetings. Visits look down lately. Is that real, or just a bumpy few weeks?",
+  "Start with the boring part, because it bites people. Load the dates as real dates, make them the index, and check for missing days. Our extract is missing nine days. On a chart, a missing day doesn't show up as a blank. It just disappears, and the line jumps straight to the next day. Worse, a seven-day rolling window that skips a day is now covering eight days. So you ask pandas to re-insert every calendar day, see the gaps as empty values, and fill them from the neighbors before you do anything else.",
+  "Next, smoothing. Daily counts are noisy. Some days you get 160 visits, some days 230. A seven-day rolling mean averages each day with the six before it, and that has a neat side effect. Every seven-day window contains exactly one Monday, one Tuesday, and so on, so the weekday pattern cancels out. What's left is the slower story: a flu-season peak every winter of about 217 visits a day, a summer low around 161, and slow growth year over year.",
+  "Then look at seasonality directly. Group by day of week and you'll see Monday runs about twelve percent above an average day, and weekends about seven percent below. Autocorrelation confirms it. Today's count looks more like the same day last week than like yesterday. The correlation at a lag of seven days is about point seven, while a lag of one day is about point five. In plain words, if you want to guess next Monday, last Monday is a great place to start.",
+  "Now the main question. In September 2025, a new urgent care opened nearby. Did ED volume really drop? Here's the trap. If you compare fall with the spring before it, the flu season gets mixed into your answer. The cleaner move is to compare each week with the same week last year. Season and weekday mix cancel, and you're left with a ratio. From January to August that ratio sat around one point zero seven, meaning about seven percent growth. After September, every single week came in below that line, and nine of seventeen weeks fell below the lower control limit.",
+  "That's the difference between a bumpy week and a real shift. Back in March there was one week that dipped well below normal, but it stayed inside the limits, and the next week bounced back. That's ordinary noise. A shift looks different. It's a run. The common rule of thumb is eight or more points in a row on one side of the center line. We got seventeen. Sep through December came in about five percent below last year, when the year had been running seven percent above. That's a swing of roughly twelve points.",
+  "One honest caution. The timing fits the urgent care opening, but this is observational data. Before you tell leadership the urgent care caused it, check for other explanations, like a coding change, a closure, or simply a mild flu season.",
+  "Last piece, and it's your bridge into machine learning next week. When you build features for a forecasting model, like yesterday's count or last week's count, always split by time. Train on the past, test on the future, never shuffle. And build rolling features from shifted data, so today's number never leaks into today's prediction. You'll also set two simple baselines. Guessing the same day last week misses by about fifteen visits a day, and the training average misses by about eighteen. Any fancy model you build later has to beat those, or it isn't worth shipping.",
+  "In healthcare job postings, this shows up as \"trend analysis,\" \"volume forecasting,\" or \"monitor operational metrics.\" Today's habits are exactly that: check the dates, compare like with like, and tell a shift from a bumpy week.",
+  "Tomorrow we roll up our sleeves on data cleaning. We'll take a messy claims extract with duplicates, missing values, and impossible numbers, and turn it into something you'd actually trust. See you then."
+ ],
+ "zip": "day10_all_materials.zip",
+ "md": "lesson.md"
+}
