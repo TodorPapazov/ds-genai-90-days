@@ -176,6 +176,24 @@
     "year over year",
     "lag features"
    ]
+  },
+  {
+   "day": 11,
+   "folder": "day11",
+   "title": "Missing data and outliers: why it's missing, what's impossible, and how to fill the holes honestly",
+   "tags": [
+    "missing data",
+    "MCAR",
+    "MAR",
+    "MNAR",
+    "imputation",
+    "outliers",
+    "IQR",
+    "robust z-score",
+    "data quality",
+    "KNNImputer",
+    "scikit-learn"
+   ]
   }
  ]
 }
