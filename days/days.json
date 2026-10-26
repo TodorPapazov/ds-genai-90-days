@@ -194,6 +194,24 @@
     "KNNImputer",
     "scikit-learn"
    ]
+  },
+  {
+   "day": 12,
+   "folder": "day12",
+   "title": "Confounding and risk adjustment: Simpson's paradox, standardization and O/E ratios for a fair hospital comparison",
+   "tags": [
+    "confounding",
+    "Simpson's paradox",
+    "stratification",
+    "direct standardization",
+    "Mantel-Haenszel",
+    "odds ratio",
+    "logistic regression",
+    "statsmodels",
+    "risk adjustment",
+    "O/E ratio",
+    "hospital quality"
+   ]
   }
  ]
 }
