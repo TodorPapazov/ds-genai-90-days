@@ -212,6 +212,23 @@
     "O/E ratio",
     "hospital quality"
    ]
+  },
+  {
+   "day": 13,
+   "folder": "day13",
+   "title": "Survival analysis: censoring, Kaplan-Meier curves, log-rank and Cox hazard ratios for time to readmission",
+   "tags": [
+    "survival analysis",
+    "censoring",
+    "Kaplan-Meier",
+    "log-rank test",
+    "Cox proportional hazards",
+    "hazard ratio",
+    "statsmodels",
+    "readmissions",
+    "heart failure",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
