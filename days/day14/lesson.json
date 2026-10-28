@@ -1,0 +1,123 @@
+{
+ "day": 14,
+ "title": "Explain vs predict (week 2 wrap-up): odds ratios, a train/test split, AUC, calibration and lift on 30-day readmissions",
+ "concept": "Week 2 ends with the question every healthcare analytics team gets wrong at least once: are you trying to <b>explain</b> readmissions or <b>predict</b> them? You simulate 4,000 discharges (seed 14) with a <b>9.0%</b> 30-day readmission rate. To explain, you fit a <b>logistic regression</b> and read adjusted <b>odds ratios</b>: each prior admission 1.59 (95% CI 1.44-1.76), diabetes 1.34, length of stay 1.06 per day, and a 7-day clinic visit <b>0.76</b> (0.61-0.95). All have p &lt; 0.05. To predict, you hold out 25% of patients as a <b>test set</b> the model never sees and compare against a <b>baseline</b> that gives everyone the average rate (AUC 0.50). The same logistic regression in scikit-learn scores <b>AUC 0.72</b> on the test set and a <b>Brier score</b> of 0.0771 vs. 0.0819 for the baseline. <b>Calibration</b> by risk decile shows predicted risks roughly match observed rates, and the top decile is readmitted at <b>24%</b>, a <b>2.7x lift</b>, catching 27% of all readmissions. The key lesson: <b>significant is not the same as predictive</b>. The 7-day visit has p = 0.015, yet on its own it gives an AUC of just 0.52; prior admissions alone gives 0.67. You finish by writing a week 2 README in your repo: question, data, three charts, five findings and limits. Tomorrow, week 3 tries to beat this model with trees and random forests.",
+ "stats": [
+  [
+   "Discharges",
+   "4,000 simulated (seed 14), 6 features, 30-day readmission"
+  ],
+  [
+   "Readmission rate",
+   "9.0%"
+  ],
+  [
+   "Split",
+   "3,000 train / 1,000 test, stratified"
+  ],
+  [
+   "Odds ratios (explain)",
+   "prior admit 1.59 each; diabetes 1.34; LOS 1.06 per day; 7-day visit 0.76 (0.61-0.95)"
+  ],
+  [
+   "Test AUC (predict)",
+   "model 0.723 vs baseline 0.500"
+  ],
+  [
+   "Brier score",
+   "model 0.0771 vs baseline 0.0819"
+  ],
+  [
+   "Top risk decile",
+   "24% readmitted, 2.7x lift, catches 27% of readmissions"
+  ],
+  [
+   "One-variable AUCs",
+   "7-day visit 0.52 (p = 0.015); diabetes 0.55; prior admits 0.67"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day14/</code> and open <code>day14/explain_vs_predict.ipynb</code> in VS Code with <code>conda activate ds90</code>.",
+  "Run snippet 1 to simulate <code>readmissions_30d.csv</code> (seed 14). Note the base rate.",
+  "Write the business question two ways: one explain question for a CMO and one predict question for a care management team.",
+  "Run snippet 2: a <code>statsmodels</code> logistic regression. Build a table of odds ratios, 95% CIs and p-values.",
+  "Run snippet 3: a stratified train/test split, a baseline that predicts the training average, and a scikit-learn <code>LogisticRegression</code>. Record test AUC and Brier for both.",
+  "Run snippet 4: a decile table of predicted vs. observed rates, then top-decile lift and the share of readmissions caught.",
+  "Plot the ROC curve and a calibration plot side by side.",
+  "Run snippet 5: one-variable AUCs next to their p-values. Write two sentences on why the 7-day visit is significant but not predictive.",
+  "Write <code>day14/README.md</code> as your week 2 report: question, data, three charts, five plain-language findings, limits (simulated, no external validation, possible leakage and fairness issues).",
+  "Add an index to the README linking your day 1-13 notebooks.",
+  "Commit and push (snippet 6).",
+  "<b>Stretch:</b> load <code>readmissions_30d.csv</code> plus a <code>risk_score</code> column into Snowflake and build a decile lift table in SQL (snippet 7)."
+ ],
+ "snippets": [
+  {
+   "title": "1. Simulate 30-day readmissions",
+   "lang": "python",
+   "code": "import numpy as np\nimport pandas as pd\n\n# Simulate 4,000 hospital discharges with a 30-day readmission flag (fixed seed)\nrng = np.random.default_rng(14)\nn = 4000\nage = rng.normal(66, 13, n).clip(18, 98).round()\nprior_admits = rng.poisson(0.9, n)                         # admissions in the past 12 months\nlos_days = rng.gamma(2.0, 2.4, n).round(1).clip(1)         # length of stay\nn_meds = rng.poisson(9, n)                                 # discharge medications\ndiabetes = (rng.random(n) < 0.32).astype(int)\nfollowup_visit = (rng.random(n) < 0.55).astype(int)        # clinic visit within 7 days\n# True log-odds of readmission: prior admits and long stays matter most\nlogit = (-2.6 + 0.45 * prior_admits + 0.06 * (los_days - 5) + 0.012 * (age - 66)\n         + 0.03 * (n_meds - 9) + 0.25 * diabetes - 0.40 * followup_visit)\nreadmit30 = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\ndf = pd.DataFrame({\"age\": age, \"prior_admits\": prior_admits, \"los_days\": los_days, \"n_meds\": n_meds,\n                   \"diabetes\": diabetes, \"followup_visit\": followup_visit, \"readmit30\": readmit30})\ndf.to_csv(\"readmissions_30d.csv\", index=False)\n\ndf = pd.read_csv(\"readmissions_30d.csv\")\nprint(df.describe().round(2).T[[\"mean\", \"std\", \"min\", \"max\"]])\nprint(f\"30-day readmission rate: {df.readmit30.mean():.1%}\")"
+  },
+  {
+   "title": "2. Explain: logistic regression odds ratios",
+   "lang": "python",
+   "code": "# Question 1 (explain): which factors are linked to readmission? Logistic regression odds ratios\nimport statsmodels.formula.api as smf\nlogit_m = smf.logit(\"readmit30 ~ age + prior_admits + los_days + n_meds + diabetes + followup_visit\",\n                    data=df).fit(disp=0)\nors = pd.DataFrame({\"OR\": np.exp(logit_m.params), \"lo\": np.exp(logit_m.conf_int()[0]),\n                    \"hi\": np.exp(logit_m.conf_int()[1]), \"p\": logit_m.pvalues}).drop(\"Intercept\")\nprint(ors.round(3))                    # OR > 1 = higher odds; all of these are \"significant\""
+  },
+  {
+   "title": "3. Predict: train/test split, baseline, AUC and Brier",
+   "lang": "python",
+   "code": "# Question 2 (predict): can we flag who will be readmitted? Hold out data the model never sees\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import roc_auc_score, brier_score_loss\nfeatures = [\"age\", \"prior_admits\", \"los_days\", \"n_meds\", \"diabetes\", \"followup_visit\"]\nX_train, X_test, y_train, y_test = train_test_split(df[features], df.readmit30, test_size=0.25,\n                                                    stratify=df.readmit30, random_state=14)\nbase = np.full(len(y_test), y_train.mean())               # baseline: everyone gets the average rate\nclf = LogisticRegression(max_iter=1000).fit(X_train, y_train)\np_test = clf.predict_proba(X_test)[:, 1]\nprint(f\"Baseline AUC {roc_auc_score(y_test, base):.3f}  Brier {brier_score_loss(y_test, base):.4f}\")\nprint(f\"Model    AUC {roc_auc_score(y_test, p_test):.3f}  Brier {brier_score_loss(y_test, p_test):.4f}\")"
+  },
+  {
+   "title": "4. Calibration by decile and top-decile lift",
+   "lang": "python",
+   "code": "# Is it useful? Top-decile lift and calibration (do predicted risks match observed rates?)\ntest = X_test.assign(y=y_test.values, p=p_test)\ntest[\"decile\"] = pd.qcut(test.p, 10, labels=False) + 1\ncal = test.groupby(\"decile\").agg(pred=(\"p\", \"mean\"), obs=(\"y\", \"mean\"), n=(\"y\", \"size\"))\nprint(cal.round(3))\ntop = test[test.decile == 10]\nprint(f\"Top 10% risk: observed {top.y.mean():.1%} vs overall {test.y.mean():.1%}  \"\n      f\"(lift {top.y.mean() / test.y.mean():.1f}x), catches {top.y.sum() / test.y.sum():.0%} of readmissions\")"
+  },
+  {
+   "title": "5. Significant is not predictive",
+   "lang": "python",
+   "code": "# Small p-value is not the same as good prediction: one variable at a time\nfor f in [\"followup_visit\", \"diabetes\", \"prior_admits\"]:\n    m = LogisticRegression().fit(X_train[[f]], y_train)\n    auc = roc_auc_score(y_test, m.predict_proba(X_test[[f]])[:, 1])\n    print(f\"{f:15s} p = {ors.loc[f, 'p']:.1e}   AUC alone = {auc:.3f}\")\n# Save a tidy summary for your week 2 report\nsummary = {\"n\": len(df), \"rate\": df.readmit30.mean(), \"auc\": roc_auc_score(y_test, p_test),\n           \"brier\": brier_score_loss(y_test, p_test)}\npd.Series(summary).to_csv(\"week2_summary.csv\")"
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "git add day14\ngit commit -m \"Day 14: explain vs predict on 30-day readmissions, week 2 report\"\ngit push"
+  },
+  {
+   "title": "Stretch: Snowflake SQL decile lift table",
+   "lang": "sql",
+   "code": "-- decile lift table from scored test patients\nWITH ranked AS (\n  SELECT readmit30, risk_score,\n         NTILE(10) OVER (ORDER BY risk_score) AS decile      -- 10 = highest risk\n  FROM readmissions_scored\n)\nSELECT decile,\n       COUNT(*)                                   AS patients,\n       ROUND(AVG(risk_score), 3)                  AS mean_predicted,\n       ROUND(AVG(readmit30), 3)                   AS observed_rate,\n       ROUND(AVG(readmit30) / AVG(AVG(readmit30)) OVER (), 2) AS lift,\n       ROUND(SUM(readmit30) / SUM(SUM(readmit30)) OVER (), 3) AS share_of_readmits\nFROM ranked\nGROUP BY decile\nORDER BY decile DESC;"
+  }
+ ],
+ "images": [
+  [
+   "day14_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day14_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day14_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day14_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day14_lesson.pdf",
+ "audio": "day14_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to day fourteen. That's the end of week two, so give yourself some credit. Two weeks ago you were summarizing skewed claims costs, and since then you've worked through hypothesis tests, confidence intervals, regression, missing data, confounding, and survival curves. Today ties all of that together and opens the door to machine learning.",
+  "Here's the big idea. There are two different questions you can ask of the same data. The first is, why does this happen? Which factors are linked to a patient coming back to the hospital within thirty days, and by how much? That's explaining. The second is, who is going to come back? Given a patient walking out the door today, how risky are they? That's predicting. They sound similar, but they need different tools and different ways of grading your work.",
+  "For explaining, you already know the tool. You fit a logistic regression and read the odds ratios. In today's simulated data, four thousand discharges with about a nine percent readmission rate, each prior admission in the past year multiplies the odds of coming back by about one point six. Diabetes bumps the odds up by about a third. And a clinic visit within seven days is linked to about twenty four percent lower odds. Every one of those has a small p-value.",
+  "Now here's the twist. For predicting, a p-value tells you almost nothing. What matters is how well the model ranks patients it has never seen. So you split the data. You train on three quarters and hide the last quarter as a test set, like an exam the model hasn't studied for. Then you compare against a baseline, the simplest honest guess, which gives everyone the average rate. That baseline has an AUC of point five, which is a coin flip.",
+  "AUC is worth saying in plain words. Pick one patient who was readmitted and one who wasn't. AUC is the chance the model gives the readmitted patient the higher risk score. Our simple model gets about point seven two. That's moderate. Useful, not magic.",
+  "And here's the lesson that sticks. The seven day visit has a p-value of about point zero one five, so it's a real effect. But use it alone to predict, and the AUC is point five two, barely better than a coin. Real and small is not the same as predictive. Prior admissions, on the other hand, carries most of the signal.",
+  "Two more ideas make this practical. Calibration asks whether the risk numbers are honest. If the model says twenty percent, do about twenty percent of those patients actually come back? You check that by grouping patients into ten risk bands and comparing predicted against observed. And lift turns it into an operations story. The top ten percent of risk scores had about a twenty four percent readmission rate, two point seven times the average, and that list held about a quarter of all readmissions. A care team can work with that.",
+  "Your hands-on today has a second job. Write a short week two README in your repo, with the question, the data, three charts, five findings, and the limits. That's the kind of artifact a hiring manager at a health system actually opens.",
+  "Tomorrow we start week three and classic machine learning for real. We'll take this same readmission problem and see whether decision trees and random forests can beat our logistic regression, and we'll talk about overfitting and cross validation so you can trust the answer. See you then."
+ ],
+ "zip": "day14_all_materials.zip",
+ "md": "lesson.md"
+}

@@ -229,6 +229,26 @@
     "heart failure",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 14,
+   "folder": "day14",
+   "title": "Explain vs predict (week 2 wrap-up): odds ratios, a train/test split, AUC, calibration and lift on 30-day readmissions",
+   "tags": [
+    "logistic regression",
+    "odds ratio",
+    "statsmodels",
+    "scikit-learn",
+    "train/test split",
+    "baseline",
+    "AUC",
+    "ROC",
+    "Brier score",
+    "calibration",
+    "lift",
+    "readmissions",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
