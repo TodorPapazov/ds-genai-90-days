@@ -249,6 +249,25 @@
     "readmissions",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 15,
+   "folder": "day15",
+   "title": "Decision trees: splits, Gini impurity, overfitting and cross-validated depth on 30-day readmissions",
+   "tags": [
+    "decision trees",
+    "Gini impurity",
+    "overfitting",
+    "max_depth",
+    "min_samples_leaf",
+    "cross-validation",
+    "GridSearchCV",
+    "feature importance",
+    "scikit-learn",
+    "AUC",
+    "readmissions",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
