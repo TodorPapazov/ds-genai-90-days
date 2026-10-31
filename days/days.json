@@ -281,6 +281,19 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 17,
+   "folder": "day17",
+   "title": "Gradient boosting with XGBoost: residuals, learning rate, early stopping and CV tuning on 30-day readmissions",
+   "tags": [
+    "Gradient boosting",
+    "XGBoost",
+    "Early stopping",
+    "Hyperparameter tuning",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
