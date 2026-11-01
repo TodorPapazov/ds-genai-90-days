@@ -294,6 +294,19 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 18,
+   "folder": "day18",
+   "title": "Imbalanced outcomes: the accuracy trap, precision-recall, and choosing a threshold on 30-day readmissions",
+   "tags": [
+    "Imbalanced classes",
+    "Precision-recall",
+    "Thresholds",
+    "Cost-sensitive",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
