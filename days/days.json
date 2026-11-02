@@ -307,6 +307,19 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 19,
+   "folder": "day19",
+   "title": "k-means clustering: unsupervised patient segments, scaling, choosing k, and profiling on the readmissions data",
+   "tags": [
+    "Clustering",
+    "k-means",
+    "Silhouette",
+    "Scaling",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
