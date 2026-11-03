@@ -320,6 +320,20 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 20,
+   "folder": "day20",
+   "title": "PCA and dimensionality reduction: turning a correlated 9-test lab panel into kidney, blood-sugar and heart axes",
+   "tags": [
+    "PCA",
+    "Dimensionality reduction",
+    "Scree plot",
+    "Loadings",
+    "Pipeline",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }

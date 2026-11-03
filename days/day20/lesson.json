@@ -1,0 +1,114 @@
+{
+ "day": 20,
+ "title": "PCA and dimensionality reduction: turning a correlated 9-test lab panel into kidney, blood-sugar and heart axes",
+ "concept": "Yesterday PCA only drew the segments. Today we learn it properly. We give the same 4,000 simulated patients a simulated <b>9-test lab panel</b>. Labs come in families: creatinine, BUN and eGFR move together (r about 0.85), and HbA1c tracks glucose (r 0.87), so 9 columns carry only a few ideas. <b>Principal component analysis (PCA)</b> builds new, uncorrelated axes, each a weighted mix of the <b>scaled</b> columns, ordered by how much spread they capture. The <b>scree plot</b> shows PC1 at 36%, PC2 21% and PC3 16% of the variance (73% together); 6 PCs pass 90%. <b>Loadings</b> let you name each axis: PC1 is <b>kidney</b> (creatinine, BUN up, eGFR down), PC2 is <b>blood sugar</b>, PC3 is <b>heart</b> (BNP against sodium). PCA never saw the diabetes flag, yet the mean PC2 score is 0.94 with diabetes vs -0.46 without. Two traps: scale first (unscaled, BNP with sd about 100 takes over PC1), and keep the scaler and PCA inside a <code>Pipeline</code> so cross-validation never peeks at test folds. And the honest lesson: PCA ignores the outcome. Compressing all 15 columns to 3 PCs gives a CV AUC of <b>0.580</b> vs <b>0.641</b> with no PCA, because readmission risk lives in prior admissions and follow-up, not in the biggest lab variance. Tomorrow: the week 3 model scorecard.",
+ "stats": [
+  [
+   "Data",
+   "days 14-19 simulated discharges (4,000 patients) plus a simulated 9-test lab panel, seed 20"
+  ],
+  [
+   "Correlated families",
+   "creatinine, BUN, eGFR r about 0.85; HbA1c and glucose r 0.87; BNP and sodium r -0.48"
+  ],
+  [
+   "Explained variance",
+   "PC1 36%, PC2 21%, PC3 16% (73% total); 6 PCs reach 95%"
+  ],
+  [
+   "Named axes",
+   "PC1 kidney, PC2 blood sugar, PC3 heart; PC2 mean 0.94 with diabetes vs -0.46 without"
+  ],
+  [
+   "Unscaled PCA",
+   "PC1 is almost 100% BNP, the lab with the biggest raw spread"
+  ],
+  [
+   "Prediction (5-fold CV AUC)",
+   "3 PCs 0.580, 5 PCs 0.599, 8 PCs 0.648, no PCA 0.641"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day20/</code>, run <code>conda activate ds90</code>, and open <code>day20/pca_labs.ipynb</code> in VS Code.",
+  "Run snippet 1 to rebuild the same simulated data as days 14-19.",
+  "Run snippet 2 to add the simulated 9-test lab panel, then plot the lab correlation heatmap and find the 3 families.",
+  "Run snippet 3: scale the labs, fit PCA, print variance per component, and draw the scree plot.",
+  "Run snippet 4: print loadings for PC1 to PC3, name each one, and scatter PC1 vs PC2 colored by diabetes.",
+  "Refit PCA on the <b>unscaled</b> labs and note which lab takes over PC1.",
+  "Run snippet 5: a scaler + PCA + logistic regression pipeline with 5-fold CV AUC for 1 to 15 components, compared with no PCA.",
+  "Write <code>day20/README.md</code>: three charts, a loadings table, and two sentences on when you would and would not use PCA.",
+  "Commit and push (snippet 6).",
+  "<b>Stretch:</b> summarize the lab panel by diabetes status in Snowflake SQL (snippet 7)."
+ ],
+ "snippets": [
+  {
+   "title": "1. Same simulated data as days 14-19",
+   "lang": "python",
+   "code": "import numpy as np\nimport pandas as pd\n\n# Same simulated data and split as days 14-19, so today uses the same patients\n# Simulate 4,000 hospital discharges with a 30-day readmission flag (fixed seed)\nrng = np.random.default_rng(14)\nn = 4000\nage = rng.normal(66, 13, n).clip(18, 98).round()\nprior_admits = rng.poisson(0.9, n)                         # admissions in the past 12 months\nlos_days = rng.gamma(2.0, 2.4, n).round(1).clip(1)         # length of stay\nn_meds = rng.poisson(9, n)                                 # discharge medications\ndiabetes = (rng.random(n) < 0.32).astype(int)\nfollowup_visit = (rng.random(n) < 0.55).astype(int)        # clinic visit within 7 days\n# True log-odds of readmission: prior admits and long stays matter most\nlogit = (-2.6 + 0.45 * prior_admits + 0.06 * (los_days - 5) + 0.012 * (age - 66)\n         + 0.03 * (n_meds - 9) + 0.25 * diabetes - 0.40 * followup_visit)\nreadmit30 = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\ndf = pd.DataFrame({\"age\": age, \"prior_admits\": prior_admits, \"los_days\": los_days, \"n_meds\": n_meds,\n                   \"diabetes\": diabetes, \"followup_visit\": followup_visit, \"readmit30\": readmit30})\ndf.to_csv(\"readmissions_30d.csv\", index=False)\n\ndf = pd.read_csv(\"readmissions_30d.csv\")\nfrom sklearn.model_selection import train_test_split\nfeatures = [\"age\", \"prior_admits\", \"los_days\", \"n_meds\", \"diabetes\", \"followup_visit\"]\nX_train, X_test, y_train, y_test = train_test_split(df[features], df.readmit30, test_size=0.25,\n                                                    stratify=df.readmit30, random_state=14)"
+  },
+  {
+   "title": "2. Add a correlated 9-test lab panel",
+   "lang": "python",
+   "code": "# Add a 9-test lab panel for the same patients (simulated, fixed seed).\n# Labs come in related families, so many columns carry overlapping information.\nrng2 = np.random.default_rng(20)\nkidney = rng2.normal(0, 1, n) + 0.3 * (df.age - 66) / 13        # hidden kidney strain\nglyc = rng2.normal(0, 1, n) + 1.2 * df.diabetes                 # hidden blood-sugar control\nheart = rng2.normal(0, 1, n) + 0.25 * df.prior_admits           # hidden heart strain\nnoise = lambda s: rng2.normal(0, s, n)\nlabs = pd.DataFrame({\n    \"creatinine\": (1.0 + 0.30 * kidney + noise(0.12)).round(2),\n    \"bun\":        (18 + 6.0 * kidney + noise(3.0)).round(0),\n    \"egfr\":       (75 - 15 * kidney + noise(6.0)).round(0),\n    \"hba1c\":      (6.0 + 0.9 * glyc + noise(0.35)).round(1),\n    \"glucose\":    (120 + 30 * glyc + noise(15)).round(0),\n    \"bnp\":        (150 + 90 * heart + noise(40)).clip(5).round(0),\n    \"sodium\":     (139 - 1.2 * heart + noise(2.0)).round(0),\n    \"hemoglobin\": (13 - 0.5 * kidney + noise(1.0)).round(1),\n    \"potassium\":  (4.2 + 0.15 * kidney + noise(0.35)).round(1)})\ndf = pd.concat([df, labs], axis=1)\nlab_cols = list(labs.columns)\nprint(df[lab_cols].corr().round(2))       # creatinine, bun, egfr move together; hba1c with glucose"
+  },
+  {
+   "title": "3. Scale, fit PCA, explained variance",
+   "lang": "python",
+   "code": "# PCA on the scaled lab panel: how many directions really carry the information?\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.decomposition import PCA\nZlab = StandardScaler().fit_transform(df[lab_cols])\npca_full = PCA(random_state=20).fit(Zlab)\nevr = pca_full.explained_variance_ratio_\nfor i, (v, c) in enumerate(zip(evr, evr.cumsum())):\n    print(f\"PC{i+1}: {v:.1%} of variance, cumulative {c:.1%}\")\nn90 = int(np.argmax(evr.cumsum() >= 0.90) + 1)\nprint(\"components needed for 90% of the variance:\", n90)"
+  },
+  {
+   "title": "4. Loadings: name the components",
+   "lang": "python",
+   "code": "# Loadings: what each component is made of (read the biggest numbers, ignore the sign flip)\nloadings = pd.DataFrame(pca_full.components_[:3].T, index=lab_cols, columns=[\"PC1\", \"PC2\", \"PC3\"]).round(2)\nprint(loadings)\n# PC1 ~ kidney (creatinine, bun, egfr in the opposite direction), PC2 ~ blood sugar, PC3 ~ heart (bnp, sodium)\nscores = pca_full.transform(Zlab)[:, :3]\ndf[[\"pc_kidney\", \"pc_sugar\", \"pc_heart\"]] = scores\nprint(df.groupby(\"diabetes\").pc_sugar.mean().round(2))   # the sugar axis separates diabetes, which PCA never saw"
+  },
+  {
+   "title": "5. PCA inside a pipeline: does it help prediction?",
+   "lang": "python",
+   "code": "# Does compressing 15 columns into fewer components hurt prediction? Pipeline keeps PCA inside the train fold.\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import cross_val_score, StratifiedKFold\nall_cols = features + lab_cols\nX_tr, X_te, y_tr, y_te = train_test_split(df[all_cols], df.readmit30, test_size=0.25,\n                                          stratify=df.readmit30, random_state=14)\ncv = StratifiedKFold(5, shuffle=True, random_state=20)\nresults = {}\nfor k in [1, 2, 3, 5, 8, 15]:\n    pipe = make_pipeline(StandardScaler(), PCA(n_components=k, random_state=20), LogisticRegression(max_iter=1000))\n    results[k] = cross_val_score(pipe, X_tr, y_tr, cv=cv, scoring=\"roc_auc\").mean()\n    print(f\"{k:2d} components: CV AUC {results[k]:.3f}\")\nbase = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))\nauc_raw = cross_val_score(base, X_tr, y_tr, cv=cv, scoring=\"roc_auc\").mean()\nprint(f\"no PCA, all 15 columns: CV AUC {auc_raw:.3f}\")\n# Leakage trap: never fit the scaler or PCA on the full data before splitting"
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "git add day20\ngit commit -m \"Day 20: PCA on a correlated lab panel, scree plot, loadings, PCA in a pipeline\"\ngit push"
+  },
+  {
+   "title": "Stretch: Snowflake SQL lab summary by diabetes status",
+   "lang": "sql",
+   "code": "-- lab panel summary by diabetes status (table LAB_PANEL joined to DISCHARGES)\nSELECT\n  d.diabetes,\n  COUNT(*)                          AS patients,\n  ROUND(AVG(l.hba1c), 2)            AS avg_hba1c,\n  ROUND(AVG(l.glucose), 0)          AS avg_glucose,\n  ROUND(AVG(l.creatinine), 2)       AS avg_creatinine,\n  ROUND(CORR(l.creatinine, l.egfr), 2) AS corr_creat_egfr,\n  ROUND(AVG(d.readmit30), 3)        AS readmit_rate\nFROM lab_panel l\nJOIN discharges d USING (patient_id)\nGROUP BY d.diabetes\nORDER BY d.diabetes;"
+  }
+ ],
+ "images": [
+  [
+   "day20_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day20_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day20_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day20_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day20_lesson.pdf",
+ "audio": "day20_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to day twenty. Yesterday we drew our patient segments on a flat two dimensional picture and I promised we would open up what those two axes really mean. Today is that day. The method is called principal component analysis, or PCA, and it is the most common way to do dimensionality reduction, which is a fancy phrase for turning many columns into a few.",
+  "Here is the setup. We kept the same four thousand simulated patients from the last week, and gave each of them a simulated lab panel with nine tests: creatinine, BUN and eGFR for the kidneys, HbA1c and glucose for blood sugar, BNP and sodium for the heart, plus hemoglobin and potassium. If you have ever looked at real lab data, you know these tests are not independent. When creatinine is high, BUN tends to be high and eGFR tends to be low. In our data those three move together with correlations around point eight five. So nine columns are really telling us about three or so underlying ideas.",
+  "PCA finds those ideas for you. It looks for the single direction through the data where patients differ the most, and calls it the first principal component. Then it finds the next direction with the most remaining spread, at a right angle to the first, and so on. Each component is just a weighted mix of the original columns, and the components are uncorrelated with each other. You get as many components as columns, but usually the first few carry most of the information.",
+  "The scree plot tells you how much. In our lab panel, the first component holds about thirty six percent of the variance, the second about twenty one, the third about sixteen. Three components together hold about seventy three percent, and six components pass ninety percent. You pick the number where the bars drop off, or where you reach a target like ninety percent.",
+  "Then comes the part I like most: naming the components. You do that by reading the loadings, the weights of each lab in each component. Component one puts big weights on creatinine and BUN and a big negative weight on eGFR, so it is a kidney axis. Component two is almost entirely HbA1c and glucose, a blood sugar axis. Component three is BNP against sodium, a heart axis. A quick note: the sign of a component is arbitrary. A direction and its opposite describe the same line, so read the relative sizes, not the plus or minus.",
+  "And here is a nice check. PCA never saw the diabetes column, yet patients with diabetes score much higher on the blood sugar axis, about point nine four against minus point four six. PCA found real clinical structure without any labels.",
+  "Two traps. First, scale before PCA. PCA chases variance in raw units, so without scaling, BNP, which has a spread of almost a hundred, takes over the whole first component, and creatinine, with a spread of point three, basically disappears. Second, put the scaler and PCA inside a scikit learn pipeline, so cross validation fits them only on the training folds and never peeks at the test data.",
+  "Now the honest lesson. We used PCA to compress all fifteen columns and then predicted readmission with logistic regression. With three components the cross validated AUC was about point five eight. With no PCA at all it was about point six four. Why? Because PCA ignores the outcome. The directions where patients vary the most are mostly the lab families, but readmission risk lives in prior admissions and follow up visits. Biggest variance is not the same thing as most predictive. So use PCA to compress redundant panels, to draw pictures of patients, or to steady a linear model with many correlated inputs, but always compare against the plain model.",
+  "In an interview, a strong answer sounds like this: I scaled the features, used a scree plot to choose the number of components, named each component from its loadings, kept PCA inside a pipeline, and checked whether it actually helped prediction.",
+  "Tomorrow is the end of week three. We will line up every model we have built so far, from logistic regression to trees, forests and XGBoost, in one honest scorecard. See you then."
+ ],
+ "zip": "day20_all_materials.zip",
+ "md": "lesson.md"
+}
