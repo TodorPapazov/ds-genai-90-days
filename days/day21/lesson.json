@@ -1,0 +1,113 @@
+{
+ "day": 21,
+ "title": "The week 3 model scorecard: baseline, logistic, tree, forest and XGBoost in one fair race, then test once and save with a model card",
+ "concept": "Week 3 wrap-up. Instead of judging each model in its own notebook, we race all of them on the same 4,000 simulated discharges, the same 6 features, the same split and the <b>same 5 cross-validation folds</b>. The line-up: a <b>baseline</b> that predicts the 9% rate for everyone, logistic regression, a depth-4 tree, a random forest and XGBoost. <code>cross_validate</code> scores each on <b>ROC AUC</b> (ranking), <b>PR-AUC</b> (the rare positives) and the <b>Brier score</b> (how accurate the probabilities are). Result: logistic <b>0.656</b>, forest 0.623, XGBoost 0.613, tree 0.581, baseline 0.500. Fancier lost because the simulated risk is a smooth add-up of a few factors, exactly what logistic regression assumes. With fold sd about 0.04, the 0.03 gap is a lean, not a landslide, so a <b>selection rule written before testing</b> (prefer the simpler model within 1 sd) picks logistic. Then the test set is opened <b>once</b>: AUC 0.723, Brier 0.077, good calibration, and flagging the top 20% catches 41% of readmissions. Test beating CV is luck of one split, so quote CV. Finally, save the model with <code>joblib</code> and write a <b>model card</b> (data, metrics, intended use, limits). Tomorrow: week 4 opens with regression.",
+ "stats": [
+  [
+   "Data",
+   "days 14-20 simulated discharges (4,000 patients, seed 14), 6 features, 9% readmitted, 75/25 split"
+  ],
+  [
+   "5-fold CV AUC",
+   "logistic 0.656, random forest 0.623, XGBoost 0.613, tree 0.581, baseline 0.500"
+  ],
+  [
+   "Noise ruler",
+   "fold-to-fold AUC sd about 0.04"
+  ],
+  [
+   "Champion",
+   "logistic regression (highest CV AUC and simplest)"
+  ],
+  [
+   "Test set, once",
+   "AUC 0.723, PR-AUC 0.231, Brier 0.077"
+  ],
+  [
+   "Top 20% flagged",
+   "catches 41% of readmissions at 18% precision vs 9% base rate"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day21/</code>, run <code>conda activate ds90</code>, and open <code>day21/model_scorecard.ipynb</code> in VS Code.",
+  "Run snippet 1 to rebuild the same simulated data and split as days 14-20.",
+  "Run snippet 2 to define the 5-model line-up, baseline included.",
+  "Run snippet 3: <code>cross_validate</code> every model on the same folds with AUC, PR-AUC and Brier, and print the scorecard.",
+  "Plot the scorecard with +/- 1 sd error bars and box-plot the per-fold AUCs.",
+  "In a markdown cell, write your selection rule <b>before</b> touching the test set.",
+  "Run snippet 4: pick the champion, score the test set once, draw the calibration curve, and check the top 20% flag.",
+  "Run snippet 5: save the model with joblib, write <code>model_card.json</code>, reload and confirm identical predictions.",
+  "Write <code>day21/README.md</code>: scorecard table, three charts, the champion and why, and its limits.",
+  "Commit and push (snippet 6).",
+  "<b>Stretch:</b> log the scorecard to a Snowflake table so every future model run lands in one place (snippet 7)."
+ ],
+ "snippets": [
+  {
+   "title": "1. Same simulated data and split as days 14-20",
+   "lang": "python",
+   "code": "import numpy as np\nimport pandas as pd\n\n# Same simulated data and split as days 14-20, so all models face the same patients\n# Simulate 4,000 hospital discharges with a 30-day readmission flag (fixed seed)\nrng = np.random.default_rng(14)\nn = 4000\nage = rng.normal(66, 13, n).clip(18, 98).round()\nprior_admits = rng.poisson(0.9, n)                         # admissions in the past 12 months\nlos_days = rng.gamma(2.0, 2.4, n).round(1).clip(1)         # length of stay\nn_meds = rng.poisson(9, n)                                 # discharge medications\ndiabetes = (rng.random(n) < 0.32).astype(int)\nfollowup_visit = (rng.random(n) < 0.55).astype(int)        # clinic visit within 7 days\n# True log-odds of readmission: prior admits and long stays matter most\nlogit = (-2.6 + 0.45 * prior_admits + 0.06 * (los_days - 5) + 0.012 * (age - 66)\n         + 0.03 * (n_meds - 9) + 0.25 * diabetes - 0.40 * followup_visit)\nreadmit30 = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\ndf = pd.DataFrame({\"age\": age, \"prior_admits\": prior_admits, \"los_days\": los_days, \"n_meds\": n_meds,\n                   \"diabetes\": diabetes, \"followup_visit\": followup_visit, \"readmit30\": readmit30})\ndf.to_csv(\"readmissions_30d.csv\", index=False)\n\ndf = pd.read_csv(\"readmissions_30d.csv\")\nfrom sklearn.model_selection import train_test_split\nfeatures = [\"age\", \"prior_admits\", \"los_days\", \"n_meds\", \"diabetes\", \"followup_visit\"]\nfrom sklearn.model_selection import train_test_split\nfeatures = [\"age\", \"prior_admits\", \"los_days\", \"n_meds\", \"diabetes\", \"followup_visit\"]\nX_train, X_test, y_train, y_test = train_test_split(df[features], df.readmit30, test_size=0.25,\n                                                    stratify=df.readmit30, random_state=14)\nprint(\"train\", X_train.shape, \"test\", X_test.shape, \"readmit rate\", round(y_train.mean(), 3))"
+  },
+  {
+   "title": "2. The week 3 model line-up",
+   "lang": "python",
+   "code": "# The week 3 line-up: every model wrapped the same way, scored on the same folds\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.dummy import DummyClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.tree import DecisionTreeClassifier\nfrom sklearn.ensemble import RandomForestClassifier\nfrom xgboost import XGBClassifier\nmodels = {\n    \"Baseline (always the rate)\": DummyClassifier(strategy=\"prior\"),\n    \"Logistic regression\": make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)),\n    \"Decision tree (depth 4)\": DecisionTreeClassifier(max_depth=4, min_samples_leaf=50, random_state=21),\n    \"Random forest\": RandomForestClassifier(n_estimators=300, min_samples_leaf=20, n_jobs=-1, random_state=21),\n    \"XGBoost\": XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=3, subsample=0.8,\n                             colsample_bytree=0.8, eval_metric=\"logloss\", random_state=21),\n}"
+  },
+  {
+   "title": "3. One scorecard: same folds, several metrics",
+   "lang": "python",
+   "code": "# One scorecard: 5-fold CV on the TRAIN set only, several metrics per model\nimport time\nfrom sklearn.model_selection import StratifiedKFold, cross_validate\ncv = StratifiedKFold(5, shuffle=True, random_state=21)\nscoring = {\"auc\": \"roc_auc\", \"pr_auc\": \"average_precision\", \"brier\": \"neg_brier_score\"}\nrows, fold_auc = [], {}\nfor name, model in models.items():\n    t0 = time.time()\n    r = cross_validate(model, X_train, y_train, cv=cv, scoring=scoring)\n    fold_auc[name] = r[\"test_auc\"]\n    rows.append({\"model\": name, \"cv_auc\": r[\"test_auc\"].mean(), \"auc_sd\": r[\"test_auc\"].std(),\n                 \"pr_auc\": r[\"test_pr_auc\"].mean(), \"brier\": -r[\"test_brier\"].mean(),\n                 \"seconds\": time.time() - t0})\nscorecard = pd.DataFrame(rows).set_index(\"model\").round(3)\nprint(scorecard.sort_values(\"cv_auc\", ascending=False))\n# Read it like a reviewer: is the gap between the top models bigger than the fold-to-fold sd?"
+  },
+  {
+   "title": "4. Pick by a rule, test once, check calibration",
+   "lang": "python",
+   "code": "# Pick a champion with a rule you wrote down BEFORE looking at the test set:\n# highest CV AUC, but prefer the simpler model if it is within one fold sd.\nbest = scorecard.cv_auc.idxmax()\nsimple_ok = scorecard.loc[\"Logistic regression\", \"cv_auc\"] >= scorecard.loc[best, \"cv_auc\"] - scorecard.loc[best, \"auc_sd\"]\nchampion = \"Logistic regression\" if simple_ok else best\nprint(\"top CV AUC:\", best, \"| champion by the rule:\", champion)\n# Open the test set ONCE, for the champion only\nfrom sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss\nfinal = models[champion].fit(X_train, y_train)\np_test = final.predict_proba(X_test)[:, 1]\nprint(f\"test AUC {roc_auc_score(y_test, p_test):.3f} | PR-AUC {average_precision_score(y_test, p_test):.3f}\"\n      f\" | Brier {brier_score_loss(y_test, p_test):.3f}\")\n# Calibration: when the model says 30%, do about 30% come back?\nfrom sklearn.calibration import calibration_curve\nfrac_pos, mean_pred = calibration_curve(y_test, p_test, n_bins=8, strategy=\"quantile\")\nprint(pd.DataFrame({\"predicted\": mean_pred.round(3), \"observed\": frac_pos.round(3)}))\n# Capacity view from day 18: flag the top 20% riskiest discharges for a follow-up call\ncut = np.quantile(p_test, 0.80)\nflag = p_test >= cut\nprint(f\"top 20% flagged: catches {y_test[flag].sum() / y_test.sum():.0%} of readmissions,\"\n      f\" precision {y_test[flag].mean():.0%} vs base rate {y_test.mean():.0%}\")"
+  },
+  {
+   "title": "5. Save the champion and a model card",
+   "lang": "python",
+   "code": "# Save the champion and a small model card so the work is reusable and reviewable\nimport joblib, json, sklearn\njoblib.dump(final, \"readmit_champion.joblib\")\ncard = {\"model\": champion, \"trained_on\": \"4,000 simulated discharges (seed 14), 75% train\",\n        \"target\": \"readmit30 (30-day readmission)\", \"features\": features,\n        \"cv_auc\": float(scorecard.loc[champion, \"cv_auc\"]),\n        \"test_auc\": round(float(roc_auc_score(y_test, p_test)), 3),\n        \"intended_use\": \"rank discharges for follow-up calls; not for denying care\",\n        \"limits\": \"simulated data; no fairness audit yet; recheck calibration on real data\",\n        \"sklearn_version\": sklearn.__version__}\njson.dump(card, open(\"model_card.json\", \"w\"), indent=2)\nreloaded = joblib.load(\"readmit_champion.joblib\")\nassert np.allclose(reloaded.predict_proba(X_test)[:, 1], p_test)   # same predictions after reload\nprint(json.dumps(card, indent=2))"
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "git add day21\ngit commit -m \"Day 21: week 3 model scorecard, selection rule, one test, calibration, joblib model and model card\"\ngit push"
+  },
+  {
+   "title": "Stretch: log the scorecard in Snowflake",
+   "lang": "sql",
+   "code": "-- one table for every model run, so week 4+ results stack up in one scorecard\nCREATE TABLE IF NOT EXISTS model_scorecard (\n  run_date DATE, project STRING, model STRING,\n  cv_auc FLOAT, auc_sd FLOAT, pr_auc FLOAT, brier FLOAT, is_champion BOOLEAN);\n\nINSERT INTO model_scorecard VALUES\n  (CURRENT_DATE, 'readmit30', 'Logistic regression', 0.656, 0.043, 0.172, 0.080, TRUE),\n  (CURRENT_DATE, 'readmit30', 'Random forest',       0.623, 0.045, 0.148, 0.081, FALSE),\n  (CURRENT_DATE, 'readmit30', 'XGBoost',             0.613, 0.043, 0.135, 0.082, FALSE);\n\nSELECT model, cv_auc, auc_sd,\n       cv_auc - MAX(cv_auc) OVER (PARTITION BY project, run_date) AS gap_to_best\nFROM model_scorecard\nWHERE project = 'readmit30'\nORDER BY cv_auc DESC;"
+  }
+ ],
+ "images": [
+  [
+   "day21_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day21_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day21_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day21_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day21_lesson.pdf",
+ "audio": "day21_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to day twenty one. That is the end of week three, and three full weeks of showing up. Nice work. Today is a wrap up day, and it is one of the most useful habits you will ever build as a data scientist. We are going to put every model from this week into one fair race and write up the result like a professional would.",
+  "Here is the setup. Same four thousand simulated hospital discharges we have used since day fourteen. Same six features: age, prior admissions, length of stay, number of medications, diabetes, and whether the patient had a follow up visit within a week. Same train and test split. The only thing that changes is the model. We line up five of them: a baseline that just predicts the nine percent readmission rate for everyone, logistic regression, a shallow decision tree, a random forest, and XGBoost.",
+  "Why so strict about using the same everything? Because if each model gets a different split, you cannot tell whether one model is better or just got easier patients. So every model is scored on the exact same five cross validation folds, using only the training data. And we score three things at once. AUC tells you how well the model ranks patients, so a readmitted patient usually scores higher than one who was fine. P R AUC focuses on the rare positive cases. And the Brier score checks whether the probabilities themselves are accurate, lower is better.",
+  "Now the results, and they are a little surprising. Logistic regression comes out on top, with a cross validated AUC of about point six six. The random forest is at point six two, XGBoost at point six one, the single tree at point five eight, and the baseline sits at exactly point five, which is what a coin flip ranking looks like. So the fancy models lost. Why? Because the way we built this data, readmission risk is a smooth add up of a few factors. That is exactly the shape logistic regression assumes. Boosting and forests are great when there are tricky interactions and thresholds hiding in the data, but here they mostly add noise. In real hospital data, with messy features and interactions, the ranking could easily flip. That is why you run the race instead of assuming.",
+  "The second big idea is reading the gap honestly. The AUC wobbles by about point zero four from fold to fold. Logistic beats the forest by about point zero three. So that is a lean, not a landslide. A good rule, written down before you peek at the test set, is: take the highest score, but if a simpler model is within one fold standard deviation, take the simpler one. Simpler models are easier to explain to clinicians, faster, and easier to monitor.",
+  "Only after you choose do you open the test set, once, for the champion. Our logistic model gets a test AUC of about point seven two. That is higher than cross validation, and here is the trap: it does not mean the model got better. One test split of a thousand patients can just be lucky. The five fold average is your honest estimate, so that is the number you quote in an interview or a README. We also check calibration, which means when the model says twenty percent risk, do about twenty percent actually come back. Ours tracks the diagonal pretty well. And in practical terms, if a care team can call the riskiest twenty percent of discharges, this model catches about forty one percent of readmissions, at roughly double the base rate precision.",
+  "Last step, and this is what makes it portfolio ready: save the model with joblib, reload it to prove the predictions match, and write a short model card. A model card says what the model is, what data trained it, its metrics, what it is meant for, like ranking patients for follow up calls, what it is not meant for, like denying care, and its limits. Healthcare hiring managers love seeing that, because it shows you think about how a model gets used, not just how it scores.",
+  "So your homework is to build the scorecard notebook, write your selection rule before you test, and push day twenty one with a clean README. Tomorrow we start week four, and we switch from predicting a yes or no to predicting a number, like how many days a patient will stay in the hospital. That means regression models and new metrics. See you then, Todor."
+ ],
+ "zip": "day21_all_materials.zip",
+ "md": "lesson.md"
+}

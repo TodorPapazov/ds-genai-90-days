@@ -334,6 +334,22 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 21,
+   "folder": "day21",
+   "title": "The week 3 model scorecard: baseline, logistic, tree, forest and XGBoost in one fair race, then test once and save with a model card",
+   "tags": [
+    "Model comparison",
+    "Cross-validation",
+    "Model selection",
+    "Calibration",
+    "Model card",
+    "joblib",
+    "XGBoost",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
