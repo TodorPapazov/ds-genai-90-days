@@ -350,6 +350,21 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 22,
+   "folder": "day22",
+   "title": "Predicting length of stay: MAE, RMSE, R squared and residual plots on hospital discharges",
+   "tags": [
+    "Regression",
+    "MAE",
+    "RMSE",
+    "R squared",
+    "Residuals",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
