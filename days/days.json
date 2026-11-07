@@ -365,6 +365,21 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 23,
+   "folder": "day23",
+   "title": "Ridge and Lasso on multicollinear length-of-stay features: shrink, zero, and read stable coefficients",
+   "tags": [
+    "Ridge",
+    "Lasso",
+    "ElasticNet",
+    "Regularization",
+    "Multicollinearity",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
