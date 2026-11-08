@@ -380,6 +380,19 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 24,
+   "folder": "day24",
+   "title": "Feature interactions and polynomial terms: when ICU plus a procedure is more than the sum, on length of stay",
+   "tags": [
+    "Feature interactions",
+    "PolynomialFeatures",
+    "Ridge",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }

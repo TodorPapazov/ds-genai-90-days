@@ -1,0 +1,114 @@
+{
+ "day": 24,
+ "title": "Feature interactions and polynomial terms: when ICU plus a procedure is more than the sum, on length of stay",
+ "concept": "Week 4 Day 3. Length of stay is not always a sum of main effects: <code>icu_stay * procedure</code> can add extra recovery days, and age can bend (<code>age<sup>2</sup></code>). Fresh simulation of 4,000 discharges (seed 24) with 8 features and those planted terms plus a distractor. The 2x2 table of mean LOS by ICU and procedure has an interaction leftover of <b>2.81</b> days (both-together 12.61 vs no/no 4.82, no/proc 6.51, ICU/no 8.11). <b>PolynomialFeatures</b>(degree=2) expands 8 columns to <b>36</b> interaction-only terms or <b>44</b> full degree-2 terms. Expand, then <b>StandardScaler</b>, then <b>RidgeCV</b> (alpha on TRAIN by MAE). 5-fold CV MAE: baseline <b>2.472</b>, Additive Ridge <b>1.313</b>, Interactions + Ridge <b>1.236</b>, Poly2 + Ridge <b>1.229</b>, Poly2 + OLS 1.229. Selection: lowest CV MAE, prefer the simpler expansion within 1 fold sd → champion <b>Interactions + Ridge</b> (alpha≈0.001). Test once: MAE <b>1.249</b> days, RMSE 1.555, R² 0.761; 80% within 2 days. Overall additive test MAE 1.335 vs 1.249 looks like a small win; on the 71 ICU-plus-procedure test patients, MAE drops from <b>1.833</b> to <b>1.350</b>. Additive predicted cell mean for both-together 11.18 vs actual 12.41; champion 12.74. Tomorrow: learning curves and validation curves.",
+ "stats": [
+  [
+   "Data",
+   "4,000 simulated discharges (seed 24), 8 features, continuous los_days, 75/25 split"
+  ],
+  [
+   "Train LOS",
+   "mean 6.12 days, sd 3.16; interaction leftover 2.81 days"
+  ],
+  [
+   "Expansion",
+   "8 raw features → 36 interaction-only terms → 44 full degree-2 terms"
+  ],
+  [
+   "5-fold CV MAE",
+   "Poly2 Ridge 1.229, Interactions 1.236, Additive Ridge 1.313, baseline 2.472"
+  ],
+  [
+   "Champion",
+   "Interactions + Ridge by simplicity rule (prefer simpler within 1 fold sd)"
+  ],
+  [
+   "Test set, once",
+   "MAE 1.249 days, RMSE 1.555, R2 0.761; 80% within 2 days; ICU+proc MAE 1.350 vs additive 1.833"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day24/</code>, run <code>conda activate ds90</code>, and open <code>day24/interactions_los.ipynb</code> in VS Code.",
+  "Run snippet 1 to simulate ~4,000 discharges with planted interactions and an age curve (seed 24).",
+  "Print the ICU × procedure cell means and the interaction leftover.",
+  "Run snippet 2 to define Dummy, additive Ridge, interactions + Ridge, poly degree 2 + Ridge, and poly degree 2 + OLS.",
+  "Confirm term counts: 8 raw, 36 interaction-only, 44 full degree-2.",
+  "Run snippet 3: 5-fold CV scorecard on TRAIN, and record each RidgeCV alpha.",
+  "In a markdown cell, write your simplicity rule <b>before</b> touching the test set.",
+  "Run snippet 4: pick the champion, score test once, and read recovered product terms.",
+  "Note whether <code>procedure icu_stay</code> and <code>acuity icu_stay</code> rank among the larger terms.",
+  "Run snippet 5: compare test cell means (actual vs additive vs champion) and the ICU-plus-procedure MAE.",
+  "Write <code>day24/README.md</code>: leftover, scorecard, cell-mean chart, champion and why, limits.",
+  "Commit and push (snippet 6).",
+  "<b>Stretch:</b> Snowflake SQL for MAE grouped by ICU and procedure (snippet 7)."
+ ],
+ "snippets": [
+  {
+   "title": "1. Simulate LOS with planted interactions and a quadratic age term",
+   "lang": "python",
+   "code": "import numpy as np\nimport pandas as pd\n\n# Fresh LOS simulation (seed 24). Effects are NOT only additive:\n# ICU after a procedure adds extra days beyond ICU + procedure alone,\n# high acuity stretches an ICU stay, and age bends (a quadratic).\nrng = np.random.default_rng(24)\nn = 4000\n\nlatent = rng.normal(0, 1, n)\nage = (67 + 11 * rng.normal(0, 1, n) + 2.5 * latent).clip(18, 98).round()\nacuity = np.clip(np.round(3 + 1.15 * latent + rng.normal(0, 0.25, n)), 1, 5).astype(int)\ncomorbidities = np.clip(\n    np.round(1.2 + 0.05 * (age - 67) + 0.85 * latent + rng.integers(0, 2, n)),\n    0, 10).astype(int)\nicu_stay = (rng.random(n) < (0.08 + 0.18 * (acuity - 1) / 4 + 0.04 * comorbidities / 5)).astype(int)\nprocedure = (rng.random(n) < (0.30 + 0.08 * (acuity - 1) / 4)).astype(int)\nemergency = (rng.random(n) < (0.48 + 0.10 * (acuity - 1) / 4)).astype(int)\nhome_dc = (rng.random(n) < (0.76 - 0.09 * (acuity - 1) / 4 - 0.05 * icu_stay)).astype(int)\nrandom_noise = rng.normal(0, 1, n).round(3)\n\nmu = (2.2\n      + 0.018 * (age - 67)\n      + 0.95 * (acuity - 1)\n      + 1.60 * procedure\n      + 0.40 * comorbidities\n      + 1.80 * icu_stay\n      + 0.65 * emergency\n      - 0.95 * home_dc\n      + 2.80 * icu_stay * procedure\n      + 0.45 * (acuity - 1) * icu_stay\n      + 0.0016 * (age - 55) ** 2)\nnoise = rng.normal(0, 1.55, n)\nlos_days = np.clip(mu + noise, 1.0, None).round(1)\n\ndf = pd.DataFrame({\n    \"age\": age, \"acuity\": acuity, \"procedure\": procedure, \"comorbidities\": comorbidities,\n    \"icu_stay\": icu_stay, \"emergency\": emergency, \"home_dc\": home_dc,\n    \"random_noise\": random_noise, \"los_days\": los_days,\n})\ndf.to_csv(\"hospital_los.csv\", index=False)\n\ndf = pd.read_csv(\"hospital_los.csv\")\nfrom sklearn.model_selection import train_test_split\nfeatures = [\"age\", \"acuity\", \"procedure\", \"comorbidities\", \"icu_stay\",\n            \"emergency\", \"home_dc\", \"random_noise\"]\nX_train, X_test, y_train, y_test = train_test_split(\n    df[features], df.los_days, test_size=0.25, random_state=24)\n\n# Interaction leftover: (ICU1,Proc1) - (ICU1,Proc0) - (ICU0,Proc1) + (ICU0,Proc0)\ncell = df.groupby([\"icu_stay\", \"procedure\"])[\"los_days\"].agg([\"mean\", \"count\"])\nmeans = df.groupby([\"icu_stay\", \"procedure\"])[\"los_days\"].mean()\nleftover = (means.loc[(1, 1)] - means.loc[(1, 0)]\n            - means.loc[(0, 1)] + means.loc[(0, 0)])\nprint(\"train\", X_train.shape, \"test\", X_test.shape,\n      \"mean LOS\", round(y_train.mean(), 2), \"sd\", round(y_train.std(), 2))\nprint(\"ICU x procedure cell means:\")\nprint(cell.round(2))\nprint(\"interaction leftover (days)\", round(float(leftover), 3))\nprint(\"share ICU\", round(df.icu_stay.mean(), 3),\n      \"share procedure\", round(df.procedure.mean(), 3),\n      \"share both\", round(((df.icu_stay == 1) & (df.procedure == 1)).mean(), 3))"
+  },
+  {
+   "title": "2. Additive vs interaction-only vs full degree-2 models",
+   "lang": "python",
+   "code": "# Model line-up: additive vs interaction-only vs full degree-2 polynomials.\n# Expand first, then scale: age^2 and icu_stay*procedure live on very different raw scales.\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler, PolynomialFeatures\nfrom sklearn.dummy import DummyRegressor\nfrom sklearn.linear_model import LinearRegression, RidgeCV\nfrom sklearn.model_selection import KFold\n\ncv = KFold(5, shuffle=True, random_state=24)\nalphas = np.logspace(-3, 3, 40)\n\ndef poly_ridge(interaction_only):\n    return make_pipeline(\n        PolynomialFeatures(degree=2, include_bias=False,\n                           interaction_only=interaction_only),\n        StandardScaler(),\n        RidgeCV(alphas=alphas, scoring=\"neg_mean_absolute_error\", cv=cv),\n    )\n\nmodels = {\n    \"Baseline (predict mean)\": DummyRegressor(strategy=\"mean\"),\n    \"Additive Ridge\": make_pipeline(\n        StandardScaler(),\n        RidgeCV(alphas=alphas, scoring=\"neg_mean_absolute_error\", cv=cv),\n    ),\n    \"Interactions + Ridge\": poly_ridge(True),\n    \"Poly degree 2 + Ridge\": poly_ridge(False),\n    \"Poly degree 2 + OLS\": make_pipeline(\n        PolynomialFeatures(degree=2, include_bias=False),\n        StandardScaler(),\n        LinearRegression(),\n    ),\n}\n\npf_int = PolynomialFeatures(degree=2, include_bias=False, interaction_only=True)\npf_full = PolynomialFeatures(degree=2, include_bias=False, interaction_only=False)\nn_int = pf_int.fit_transform(X_train).shape[1]\nn_full = pf_full.fit_transform(X_train).shape[1]\nprint(\"raw features\", len(features),\n      \"| interaction-only terms\", n_int,\n      \"| full degree-2 terms\", n_full)\nprint(\"models:\", list(models))"
+  },
+  {
+   "title": "3. CV scorecard and RidgeCV alphas on TRAIN",
+   "lang": "python",
+   "code": "# 5-fold CV scorecard on TRAIN. Alphas are chosen inside RidgeCV, still on train only.\nimport time\nfrom sklearn.model_selection import cross_validate\n\nscoring = {\"mae\": \"neg_mean_absolute_error\",\n           \"rmse\": \"neg_root_mean_squared_error\",\n           \"r2\": \"r2\"}\nrows, fold_mae, chosen_alpha = [], {}, {}\nfor name, model in models.items():\n    t0 = time.time()\n    r = cross_validate(model, X_train, y_train, cv=cv, scoring=scoring)\n    fold_mae[name] = -r[\"test_mae\"]\n    rows.append({\n        \"model\": name,\n        \"cv_mae\": (-r[\"test_mae\"]).mean(),\n        \"mae_sd\": (-r[\"test_mae\"]).std(),\n        \"cv_rmse\": (-r[\"test_rmse\"]).mean(),\n        \"cv_r2\": r[\"test_r2\"].mean(),\n        \"r2_sd\": r[\"test_r2\"].std(),\n        \"seconds\": time.time() - t0,\n    })\nscorecard = pd.DataFrame(rows).set_index(\"model\").round(3)\nprint(scorecard.sort_values(\"cv_mae\"))\n\n# Fit each RidgeCV pipeline on TRAIN to read the chosen alpha (not a test peek)\nfor name in [\"Additive Ridge\", \"Interactions + Ridge\", \"Poly degree 2 + Ridge\"]:\n    models[name].fit(X_train, y_train)\n    step = models[name].named_steps[\"ridgecv\"]\n    chosen_alpha[name] = float(step.alpha_)\n    print(f\"{name} alpha={chosen_alpha[name]:.4g}\")"
+  },
+  {
+   "title": "4. Simplicity champion, test once, read recovered terms",
+   "lang": "python",
+   "code": "# Write the selection rule BEFORE opening test, then score once and read the terms.\nfrom sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score\n\ncandidates = scorecard.drop(index=[\"Baseline (predict mean)\"], errors=\"ignore\")\nbest = candidates.cv_mae.idxmin()\nbest_mae = candidates.loc[best, \"cv_mae\"]\nbest_sd = candidates.loc[best, \"mae_sd\"]\n# Prefer simpler expansions when CV MAE is within 1 fold sd of the best\nprefer_order = [\"Interactions + Ridge\", \"Poly degree 2 + Ridge\",\n                \"Additive Ridge\", \"Poly degree 2 + OLS\"]\nchampion = best\nfor name in prefer_order:\n    if name in candidates.index:\n        if candidates.loc[name, \"cv_mae\"] <= best_mae + best_sd:\n            champion = name\n            break\nprint(\"best CV MAE:\", best, \"| champion by simplicity rule:\", champion)\n\nfinal = models[champion]\n# RidgeCV models were already fit on train in snippet 3; OLS/others may need a fit\nfinal.fit(X_train, y_train)\ny_pred = final.predict(X_test)\ntest_mae = mean_absolute_error(y_test, y_pred)\ntest_rmse = mean_squared_error(y_test, y_pred) ** 0.5\ntest_r2 = r2_score(y_test, y_pred)\nresiduals = y_test.values - y_pred\nprint(f\"test MAE {test_mae:.3f} days | RMSE {test_rmse:.3f} | R2 {test_r2:.3f}\")\nprint(\"residual mean\", round(residuals.mean(), 3),\n      \"residual sd\", round(residuals.std(), 3))\n\ndef term_table(pipe, label):\n    steps = pipe.named_steps\n    if \"polynomialfeatures\" in steps:\n        names = steps[\"polynomialfeatures\"].get_feature_names_out(features)\n    else:\n        names = np.array(features)\n    if \"ridgecv\" in steps:\n        coefs_ = steps[\"ridgecv\"].coef_\n    else:\n        coefs_ = steps[\"linearregression\"].coef_\n    s = pd.Series(coefs_, index=names, name=label)\n    return s\n\nchamp_terms = term_table(final, champion)\nspecial = [t for t in champ_terms.index\n           if (\"icu_stay\" in t and \"procedure\" in t)\n           or (\"acuity\" in t and \"icu_stay\" in t)\n           or t in (\"age^2\", \"age\")]\nprint(\"key recovered terms (scaled coefs):\")\nprint(champ_terms.reindex(special).dropna().round(3))\npoly_like = champ_terms[[c for c in champ_terms.index if (\" \" in c) or (\"^\" in c)]]\nprint(\"top |interaction/square| terms:\")\nprint(poly_like.abs().sort_values(ascending=False).head(8).round(3))"
+  },
+  {
+   "title": "5. Cell means and the ICU-plus-procedure subgroup MAE",
+   "lang": "python",
+   "code": "# Group-mean check: can an additive model reproduce the ICU x procedure cells?\nadd_pipe = models[\"Additive Ridge\"]\nadd_pipe.fit(X_train, y_train)\ntest_view = X_test.copy()\ntest_view[\"actual\"] = y_test.values\ntest_view[\"pred_add\"] = add_pipe.predict(X_test)\ntest_view[\"pred_champ\"] = y_pred\n\ndef cell_means(frame, col):\n    return frame.groupby([\"icu_stay\", \"procedure\"])[col].mean().unstack()\n\nactual_cells = cell_means(test_view, \"actual\")\nadd_cells = cell_means(test_view, \"pred_add\")\nchamp_cells = cell_means(test_view, \"pred_champ\")\ncell_counts = test_view.groupby([\"icu_stay\", \"procedure\"]).size().unstack()\nprint(\"test actual cell means:\")\nprint(actual_cells.round(2))\nprint(\"additive predicted cell means:\")\nprint(add_cells.round(2))\nprint(\"champion predicted cell means:\")\nprint(champ_cells.round(2))\nprint(\"cell counts:\")\nprint(cell_counts)\n\nboth = (X_test[\"icu_stay\"] == 1) & (X_test[\"procedure\"] == 1)\nfrom sklearn.metrics import mean_absolute_error as _mae\nadd_both = _mae(y_test[both], add_pipe.predict(X_test[both]))\nchamp_both = _mae(y_test[both], y_pred[both.to_numpy()])\nadd_overall = _mae(y_test, add_pipe.predict(X_test))\nprint(\"ICU+procedure test n\", int(both.sum()),\n      \"| additive MAE\", round(add_both, 3),\n      \"| champion MAE\", round(champ_both, 3))\nprint(\"additive test MAE overall\", round(add_overall, 3),\n      \"| champion test MAE overall\", round(test_mae, 3))\n\nabs_err = np.abs(residuals)\nprint(f\"median |error| {np.median(abs_err):.2f} days | \"\n      f\"P90 |error| {np.quantile(abs_err, 0.90):.2f} days | \"\n      f\"share within 2 days {(abs_err <= 2).mean():.0%}\")\n# An additive model averages the extra ICU-plus-procedure days across rows.\n# Interactions (and a quadratic age term) give those extra days back to the right patients."
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "git add day24\ngit commit -m \"Day 24: feature interactions and polynomial terms on LOS\"\ngit push"
+  },
+  {
+   "title": "Stretch: MAE by ICU and procedure in Snowflake SQL",
+   "lang": "sql",
+   "code": "-- after scoring a held-out batch, see whether errors concentrate in one cell\nCREATE TABLE IF NOT EXISTS los_predictions (\n  discharge_id STRING, actual_los FLOAT, predicted_los FLOAT,\n  icu_stay INT, procedure INT, model STRING, scored_on DATE);\n\nSELECT model, icu_stay, procedure,\n       ROUND(AVG(ABS(actual_los - predicted_los)), 3) AS mae_days,\n       ROUND(AVG(actual_los), 2) AS mean_actual,\n       ROUND(AVG(predicted_los), 2) AS mean_pred,\n       COUNT(*) AS n\nFROM los_predictions\nWHERE scored_on = CURRENT_DATE\nGROUP BY model, icu_stay, procedure\nORDER BY model, icu_stay, procedure;"
+  }
+ ],
+ "images": [
+  [
+   "day24_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day24_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day24_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day24_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day24_lesson.pdf",
+ "audio": "day24_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to day twenty four. Yesterday we used Ridge and Lasso so that near-duplicate clinical features would stop fighting over the same credit. Today we ask a different question: what if two features together do more than either one does alone?",
+  "Think about a patient who goes to the I C U after a procedure. An additive model says, add some days for the procedure, add some days for the I C U, and you are done. Real discharge data often disagrees. The combination carries extra recovery time that is not sitting in either main effect. That extra piece is an interaction. Age can bend too. The jump from seventy to eighty is not the same as the jump from fifty to sixty, and that curve is a polynomial term, a square of age.",
+  "We simulate four thousand fresh discharges with a fixed seed of twenty four. Eight features this time: age, acuity, procedure, comorbidities, I C U stay, emergency, home discharge, and a pure random distractor. Hidden in the data are two true interactions, I C U times procedure and acuity times I C U, plus a gentle age curve. When you build the two by two table of mean length of stay by I C U and procedure, the leftover after subtracting the two main effects is about two point eight days. That leftover is the whole point of today.",
+  "An additive Ridge model, the same habit we used yesterday, gets the ordinary stays roughly right and still looks decent on overall M A E. It systematically undershoots the I C U plus procedure cell, because it has no place to put those extra days except by smearing them across other rows. Sklearn's Polynomial Features with degree two builds the products for you, and if you leave interaction only off, it also builds the squares. Eight columns become thirty six interaction terms, or forty four if you keep the squares. That explosion is why yesterday's regularization still matters. Expand first, then scale, then let Ridge C V pick alpha on the training set. Age squared and a zero one product live on very different raw scales, so a penalty without a scaler will punish the wrong thing.",
+  "Five fold cross validation on train tells a clean story. The mean baseline sits around two point five days of M A E. Additive Ridge improves that to about one point three one. Adding interactions drops it to about one point two four, and the full degree two model is a hair better still, about one point two three. Those last two are within one fold standard deviation of each other, so our selection rule prefers the simpler expansion: interactions plus Ridge. We write that rule before opening the test set. On the held out thousand patients, the champion lands around one point two five days of M A E, R M S E about one point five six, R squared about point seven six, and roughly four out of five patients within two days.",
+  "Here is the number I want you to remember. Overall test M A E only moves a little, from about one point three four with the additive model to one point two five with the champion. On the seventy one test patients who had both an I C U stay and a procedure, M A E drops from about one point eight three to about one point three five. Average metrics can hide a clinically important subgroup. The champion also recovers the two product terms we planted, procedure times I C U and acuity times I C U. Some extra products like age times comorbidities show up too, because age and comorbidities already move together, and those products can stand in for a curve that an interactions only model is not allowed to fit directly.",
+  "Your homework is to build the notebook, print the leftover from the two by two table, compare the five models, pick a champion with the simplicity rule, and draw the cell mean chart of actual versus additive versus champion. Push day twenty four with a short README. Tomorrow we read learning curves and validation curves, so you can tell whether extra polynomial terms are fitting signal or just memorizing the training set. See you then, Todor."
+ ],
+ "zip": "day24_all_materials.zip",
+ "md": "lesson.md"
+}
