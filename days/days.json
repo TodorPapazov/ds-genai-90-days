@@ -393,6 +393,20 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 26,
+   "folder": "day26",
+   "title": "Learning and validation curves: diagnosing under and overfitting on length of stay",
+   "tags": [
+    "Learning curves",
+    "Validation curves",
+    "Bias variance",
+    "Ridge",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
