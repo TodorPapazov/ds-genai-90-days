@@ -407,6 +407,20 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 27,
+   "folder": "day27",
+   "title": "Data leakage and pipelines inside cross-validation: honest scores on length of stay",
+   "tags": [
+    "Data leakage",
+    "Pipelines",
+    "GroupKFold",
+    "Cross-validation",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
