@@ -421,6 +421,22 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 28,
+   "folder": "day28",
+   "title": "The week 4 regression scorecard: seven models in one fair race, test once, and a model card",
+   "tags": [
+    "Model selection",
+    "cross_validate",
+    "GroupKFold",
+    "Prediction intervals",
+    "Model card",
+    "Length of stay",
+    "scikit-learn",
+    "XGBoost",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
