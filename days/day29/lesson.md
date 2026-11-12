@@ -1,0 +1,302 @@
+# Day 29: The feature engineering toolkit: ColumnTransformer recipes for labs, codes and dates on 30-day readmission
+
+## Concept
+Week 5 opens with feature engineering, the skill almost every healthcare data science posting lists next to SQL, ICD/DRG codes and scikit-learn. A ColumnTransformer holds one recipe per column type inside the Pipeline, so every GroupKFold fold learns its own medians, scales, bins and categories: median fill + scaling for plain numbers, log1p for skewed LOS and creatinine (skew 1.9 to 0.7), quantile bins for hemoglobin (30% readmit in the lowest bin vs 12% in the highest), missing-indicator flags (28% of elective stays lack creatinine vs 6% of emergency), one-hot for payer, admit type, disposition and ICD-10 chapter, and backward-looking date features (weekday, month, days since last visit: 30% readmit within 0-30 days vs 9% after 180+). The hard column is DRG: 97 codes in training, 79 with fewer than 20 stays. On 2,641 simulated stays from 1,000 patients (seed 29, readmit rate 18.4%), the same logistic regression scored CV ROC AUC 0.692 on raw numbers, 0.714 with the toolkit, 0.719 with DRG TargetEncoder, 0.724 with rare codes pooled by OneHotEncoder(min_frequency=20) and 0.731 with every code one-hot. A leaky recipe that averaged readmission per DRG on all rows before CV scored 0.752, a fake gain from each fold seeing its own answers. The rule (best CV AUC, simplest within 1 sd) picks rare grouped (55 columns, not 133); test AUC, opened once, 0.746, and get_feature_names_out turns the columns back into names you can explain. All data is simulated for teaching. Tomorrow: custom transformers and one full pipeline heading toward MLflow.
+
+## Key numbers
+- **Data:** 2,641 simulated stays, 1,000 patients (seed 29), readmit rate 18.4%, split by patient 1,989/652
+- **DRG long tail:** 97 codes in train, 79 with < 20 stays (25% of stays); 3 test codes unseen in train
+- **CV ROC AUC:** raw 0.692, toolkit no DRG 0.714, DRG target enc 0.719, rare grouped 0.724, all codes 0.731
+- **The leak:** DRG mean on all rows before CV: 0.752 (honest target encoder: 0.719)
+- **Rule + test:** best 0.731 - 1 sd = 0.720; simplest qualifying = rare grouped (55 cols); test AUC 0.746 (raw 0.714)
+- **Signals:** readmit 30% if last visit 0-30 days vs 9% after 180+; 30% in lowest hemoglobin bin vs 12% in highest
+
+## Hands-on
+1. In your repo, create day29/, run conda activate ds90, and open day29/readmit_features.ipynb in VS Code.
+2. Run snippet 1 to simulate 2,641 stays from 1,000 patients (seed 29), save readmit_week5.csv, split by patient and set up GroupKFold(5).
+3. Run snippet 2: add backward-looking features (weekday, month, weekend, winter, days since last visit, prior visits, ICD-10 chapter) and inspect the DRG long tail on train only.
+4. Run snippet 3: build the ColumnTransformer (scale, log1p, bins, missing flags, one-hot, DRG options) and print get_feature_names_out(). Explain 5 columns in a markdown cell.
+5. Before racing, write your selection rule in a markdown cell.
+6. Run snippet 4: race the five honest recipes plus the leaky one with the same logistic regression and the same patient folds.
+7. Run snippet 5: apply the rule, refit the champion on train, score the test set once, read the top coefficients by name, save the model and feature_list.json.
+8. Write day29/README.md: the recipe table, the leak story in two sentences, why rare grouping won, and limits (simulated data).
+9. Commit and push (snippet 6): git add day29, git commit -m "Day 29: ...", git push.
+10. Stretch: build the same features in Snowflake SQL (snippet 7) and compare a few rows with pandas.
+
+## Code
+### 1. Simulate 30-day readmission data, split by patient (seed 29)
+```python
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import GroupShuffleSplit, GroupKFold
+
+# Simulated 30-day readmission data (seed 29): 1,000 patients with 1 to 6 stays each.
+# Real-world shape: skewed labs with gaps, payer and disposition categories, ~100 DRG codes with a long tail.
+rng = np.random.default_rng(29)
+n_pat = 1000
+visits = np.clip(1 + rng.poisson(1.6, n_pat), 1, 6)
+pid = np.repeat(np.arange(n_pat), visits)
+n = len(pid)
+frailty = np.repeat(rng.normal(0, 1, n_pat), visits)                     # hidden, never a feature
+age = np.repeat(rng.normal(64, 15, n_pat).clip(18, 99).round(), visits)
+
+# admit dates: first stay in 2024-01 to 2025-06, later stays after a gap that is shorter for frail patients
+first = pd.Timestamp("2024-01-01") + pd.to_timedelta(rng.integers(0, 546, n_pat), unit="D")
+gap = rng.exponential(110 * np.exp(-0.5 * frailty)) + 3
+order = pd.Series(pid).groupby(pid).cumcount().values
+offset = pd.Series(np.where(order == 0, 0, gap)).groupby(pid).cumsum().values
+admit_date = np.repeat(first.values, visits) + pd.to_timedelta(offset.round(), unit="D").values
+
+# DRG codes: a few big ones (heart failure 291, sepsis 871, joint replacement 470, COPD 190) and a long tail
+top = ["291", "871", "470", "190", "392", "683", "690", "193", "603", "378"]
+tail = [f"{c:03d}" for c in rng.choice(np.setdiff1d(np.arange(1, 999), np.array(top, int)), 90, replace=False)]
+drg_codes = np.array(top + tail)
+p = 1 / np.arange(1, len(drg_codes) + 1) ** 1.1; p /= p.sum()
+drg = rng.choice(drg_codes, n, p=p)
+drg_eff = dict(zip(drg_codes, rng.normal(0, 0.35, len(drg_codes))))   # tail codes: small, noisy effects
+drg_eff.update({"291": 0.7, "871": 0.6, "470": -1.0, "190": 0.6, "392": -0.3, "683": 0.4})
+chap_of = {"291": "I", "871": "A", "470": "M", "190": "J", "392": "K", "683": "N", "690": "N", "193": "J", "603": "L", "378": "K"}
+chapters = np.array(list("IJKNAEMFL"))
+chap = np.array([chap_of.get(d, chapters[int(d) % 9]) for d in drg])
+icd10 = np.array([f"{c}{rng.integers(10, 99)}.{rng.integers(0, 9)}" for c in chap])   # e.g. I50.9
+
+payer = np.where(age >= 65, rng.choice(["Medicare", "Commercial", "Medicaid"], n, p=[.85, .1, .05]),
+                 rng.choice(["Commercial", "Medicaid", "Self-pay"], n, p=[.6, .3, .1]))
+admit_type = np.where(drg == "470", "Elective", rng.choice(["Emergency", "Urgent", "Elective"], n, p=[.62, .2, .18]))
+discharge = rng.choice(["Home", "Home health", "SNF", "AMA"], n, p=[.6, .18, .17, .05])
+los_days = np.round(np.exp(1.2 + 0.25 * frailty + rng.normal(0, 0.5, n)), 1)
+creatinine = np.round(np.exp(0.05 + 0.25 * frailty + rng.normal(0, 0.4, n)), 2)          # right-skewed
+hemoglobin = np.round(12.6 - 0.8 * frailty + rng.normal(0, 1.4, n), 1)
+sodium = np.round(139 + rng.normal(0, 3.5, n))
+creatinine[rng.random(n) < np.where(admit_type == "Elective", 0.25, 0.05)] = np.nan       # missing is NOT random
+hemoglobin[rng.random(n) < 0.10] = np.nan
+sodium[rng.random(n) < 0.06] = np.nan
+
+df = pd.DataFrame({"patient_id": pid, "admit_date": admit_date, "age": age, "payer": payer, "admit_type": admit_type,
+                   "discharge": discharge, "drg": drg, "icd10": icd10, "los_days": los_days,
+                   "creatinine": creatinine, "hemoglobin": hemoglobin, "sodium": sodium, "_frailty": frailty})
+df = df.sort_values(["patient_id", "admit_date"]).reset_index(drop=True)
+gap_true = df.groupby("patient_id").admit_date.diff().dt.days
+dow, mon, hgb = df.admit_date.dt.dayofweek, df.admit_date.dt.month, df.hemoglobin.fillna(12.5)
+logit = (-3.1 + 0.012 * (df.age - 64) + 0.7 * np.log(df.creatinine.fillna(1.0)) + 1.1 * (hgb < 10) + 0.3 * hgb.between(10, 11.5)
+         + df.drg.map(drg_eff) + df.discharge.map({"Home": 0, "Home health": .25, "SNF": .45, "AMA": 1.0})
+         + 0.35 * (df.payer == "Medicaid") + 0.4 * np.log(df.los_days) + 0.25 * (dow >= 5) + 0.2 * mon.isin([12, 1, 2])
+         + np.where(gap_true < 30, 0.9, np.where(gap_true < 90, 0.35, 0)) + 0.3 * df._frailty)
+df["readmit30"] = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)
+df = df.drop(columns="_frailty")
+df.to_csv("readmit_week5.csv", index=False)
+
+gss = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=29)
+tr_idx, te_idx = next(gss.split(df, groups=df.patient_id))          # patients never cross the split
+gkf = GroupKFold(5)
+print(df.shape, "readmit rate", round(df.readmit30.mean(), 3), "DRG levels", df.drg.nunique(),
+      "train", len(tr_idx), "test", len(te_idx))
+```
+
+### 2. Backward-looking row features: dates, prior visits, ICD chapter
+```python
+# Row-level features that only look backward in time. Safe to build BEFORE the split.
+def add_row_features(d):
+    d = d.sort_values(["patient_id", "admit_date"]).copy()
+    d["admit_dow"] = d.admit_date.dt.dayofweek                         # 0 = Monday
+    d["weekend_admit"] = (d.admit_dow >= 5).astype(int)
+    d["admit_month"] = d.admit_date.dt.month
+    d["winter"] = d.admit_month.isin([12, 1, 2]).astype(int)
+    d["days_since_last"] = d.groupby("patient_id").admit_date.diff().dt.days   # NaN on first visit
+    d["prior_visits"] = d.groupby("patient_id").cumcount()
+    d["dx_chapter"] = d.icd10.str[0]                                   # ICD-10 code -> chapter letter
+    return d
+
+df = add_row_features(df)
+train, test = df.loc[df.index.isin(tr_idx)], df.loc[df.index.isin(te_idx)]
+ytr, yte, gtr = train.readmit30, test.readmit30, train.patient_id
+
+# How bad is the DRG long tail? Look at TRAIN only.
+drg_counts = train.drg.value_counts()
+print("DRG levels in train:", drg_counts.size, "| levels with < 20 stays:", (drg_counts < 20).sum(),
+      "| share of stays in those rare levels:", round(drg_counts[drg_counts < 20].sum() / len(train), 3))
+# Frequency encoding: counts come from TRAIN, then get mapped onto test (unseen code -> 0).
+freq = drg_counts / len(train)
+test_freq = test.drg.map(freq).fillna(0)
+print("DRG codes in test never seen in train:", sorted(set(test.drg) - set(train.drg))[:8])
+print("first visits (days_since_last missing):", round(df.days_since_last.isna().mean(), 3))
+print(df.groupby(pd.cut(df.days_since_last, [0, 30, 90, 180, 2000])).readmit30.mean().round(3))
+```
+
+### 3. The ColumnTransformer toolkit and get_feature_names_out
+```python
+# One ColumnTransformer = one recipe per column type. Everything here is FIT on the training fold only.
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import make_pipeline
+from sklearn.impute import SimpleImputer, MissingIndicator
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, FunctionTransformer, KBinsDiscretizer, TargetEncoder
+from sklearn.model_selection import KFold
+
+num = ["age", "sodium", "prior_visits", "weekend_admit", "winter"]
+skewed = ["los_days", "creatinine"]                    # long right tail -> log
+labs = ["creatinine", "hemoglobin", "sodium"]          # flag missing labs
+low_card = ["payer", "admit_type", "discharge", "dx_chapter"]
+log1p = FunctionTransformer(np.log1p, feature_names_out="one-to-one")
+
+
+def prep(drg="rare_onehot"):
+    parts = [
+        ("num", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()), num),
+        ("log", make_pipeline(SimpleImputer(strategy="median"), log1p, StandardScaler()), skewed),
+        ("hgb_bin", make_pipeline(SimpleImputer(strategy="median"),
+                                  KBinsDiscretizer(n_bins=4, encode="onehot-dense", strategy="quantile",
+                                                   quantile_method="averaged_inverted_cdf")), ["hemoglobin"]),
+        ("miss", MissingIndicator(), labs),
+        ("gap", make_pipeline(SimpleImputer(strategy="constant", fill_value=365, add_indicator=True),   # first visit:
+                              log1p, StandardScaler()), ["days_since_last"]),                          # 365 + a flag
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), low_card),
+    ]
+    if drg == "rare_onehot":     # levels with < 20 training stays share one "infrequent" column
+        parts.append(("drg", OneHotEncoder(min_frequency=20, handle_unknown="infrequent_if_exist", sparse_output=False), ["drg"]))
+    elif drg == "onehot_all":    # every code gets its own column, even codes seen 2 times
+        parts.append(("drg", OneHotEncoder(handle_unknown="ignore", sparse_output=False), ["drg"]))
+    elif drg == "target":        # mean readmit rate per code, cross-fitted inside fit, shrunk toward the overall rate
+        parts.append(("drg", TargetEncoder(target_type="binary", smooth="auto", cv=KFold(5, shuffle=True, random_state=29)), ["drg"]))
+    return ColumnTransformer(parts, remainder="drop", verbose_feature_names_out=True)
+
+ct = prep("rare_onehot").fit(train, ytr)
+names = ct.get_feature_names_out()
+print(len(names), "columns after the ColumnTransformer")
+print(list(names[:6]), "...", [x for x in names if x.startswith(("miss", "gap", "hgb"))][:9])
+print([x for x in names if x.startswith("drg")])
+```
+
+### 4. Race the feature recipes (and one leak) with the same model and folds
+```python
+# Same model, same patient folds; only the feature recipe changes.
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_validate
+lr = lambda: LogisticRegression(C=0.5, max_iter=3000)
+raw = ColumnTransformer([("num", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()),
+                          ["age", "los_days", "creatinine", "hemoglobin", "sodium", "prior_visits"])])
+cands = {   # ordered simplest -> most complex
+    "raw numeric only": make_pipeline(raw, lr()),
+    "toolkit, no DRG": make_pipeline(prep(drg=None), lr()),
+    "+ DRG target encoded": make_pipeline(prep("target"), lr()),          # DRG -> 1 column
+    "+ DRG one-hot, rare grouped": make_pipeline(prep("rare_onehot"), lr()), # DRG -> 19 columns
+    "+ DRG one-hot, all codes": make_pipeline(prep("onehot_all"), lr()),     # DRG -> 97 columns
+}
+rows = []
+for name, model in cands.items():
+    cv = cross_validate(model, train, ytr, groups=gtr, cv=gkf, scoring=["roc_auc", "neg_log_loss"])
+    n_cols = model[0].fit(train, ytr).get_feature_names_out().size
+    rows.append({"recipe": name, "n_cols": n_cols, "cv_auc": cv["test_roc_auc"].mean(), "auc_sd": cv["test_roc_auc"].std(),
+                 "cv_logloss": -cv["test_neg_log_loss"].mean()})
+board = pd.DataFrame(rows).set_index("recipe")
+
+# The LEAK: target-encode DRG with the mean of ALL training rows before CV (no cross-fitting, no shrinkage).
+leaky = train.assign(drg_rate=train.drg.map(train.groupby("drg").readmit30.mean()))
+leak_model = make_pipeline(ColumnTransformer([("p", prep(drg=None), list(train.columns)),
+                                              ("te", "passthrough", ["drg_rate"])]), lr())
+cv = cross_validate(leak_model, leaky, ytr, groups=gtr, cv=gkf, scoring=["roc_auc", "neg_log_loss"])
+board.loc["LEAKY: DRG mean before CV"] = [37, cv["test_roc_auc"].mean(), cv["test_roc_auc"].std(), -cv["test_neg_log_loss"].mean()]
+print(board.round(3))
+```
+
+### 5. Rule, test once, read weights by name, save
+```python
+# Rule written first: best honest CV AUC, then the simplest recipe within 1 sd. Then test ONCE.
+from sklearn.metrics import roc_auc_score
+import joblib, json
+honest = board.drop(index="LEAKY: DRG mean before CV")
+best = honest.cv_auc.idxmax()
+limit = honest.loc[best, "cv_auc"] - honest.loc[best, "auc_sd"]
+eligible = [r for r in cands if honest.loc[r, "cv_auc"] >= limit]
+champion = eligible[0]                                             # dict order = simplest first
+print("best:", best, "| limit", round(limit, 3), "| eligible:", eligible, "| champion:", champion)
+
+final = cands[champion].fit(train, ytr)
+p_te = final.predict_proba(test)[:, 1]
+t_auc = roc_auc_score(yte, p_te)
+raw_auc = roc_auc_score(yte, cands["raw numeric only"].fit(train, ytr).predict_proba(test)[:, 1])
+# the leaky recipe on new patients: the DRG means were memorized, so the promise does not hold
+rate = train.groupby("drg").readmit30.mean()
+leak_fit = leak_model.fit(leaky, ytr)
+leak_auc = roc_auc_score(yte, leak_fit.predict_proba(test.assign(drg_rate=test.drg.map(rate).fillna(ytr.mean())))[:, 1])
+te_auc = roc_auc_score(yte, cands["+ DRG target encoded"].fit(train, ytr).predict_proba(test)[:, 1])
+print(f"test AUC: champion {t_auc:.3f} | raw numeric {raw_auc:.3f} | honest target enc {te_auc:.3f} | leaky {leak_auc:.3f}")
+print(f"leaky CV said {board.loc['LEAKY: DRG mean before CV', 'cv_auc']:.3f}, honest target encoding CV said "
+      f"{board.loc['+ DRG target encoded', 'cv_auc']:.3f}: same information, the difference is fold answers leaking in")
+
+# get_feature_names_out turns 55 anonymous columns back into words you can explain
+names = final[0].get_feature_names_out()
+coef = pd.Series(final[-1].coef_[0], index=names).sort_values(key=abs, ascending=False)
+print(coef.head(10).round(2))
+joblib.dump(final, "readmit_features.joblib")
+json.dump({"champion": champion, "n_features": int(names.size), "features": list(names),
+           "cv_auc": round(float(honest.loc[champion, "cv_auc"]), 3), "test_auc": round(float(t_auc), 3)},
+          open("feature_list.json", "w"), indent=2)
+```
+
+### 6. Push to GitHub
+```bash
+git add day29
+git commit -m "Day 29: feature engineering toolkit with ColumnTransformer on 30-day readmission"
+git push
+```
+
+### 7. Stretch: the same features in Snowflake SQL
+```sql
+-- Same feature ideas in Snowflake. Rule: anything learned from data (frequencies, target rates)
+-- comes from TRAIN rows only; row-level date features can use the whole table.
+-- Assumes a split column ('train' / 'test', assigned by patient) on readmit_week5.
+WITH base AS (
+  SELECT e.*,
+         DAYOFWEEKISO(admit_date)                       AS admit_dow,        -- 1 = Monday
+         IFF(DAYOFWEEKISO(admit_date) >= 6, 1, 0)       AS weekend_admit,
+         MONTH(admit_date)                              AS admit_month,
+         IFF(MONTH(admit_date) IN (12, 1, 2), 1, 0)     AS winter,
+         DATEDIFF('day', LAG(admit_date) OVER (PARTITION BY patient_id ORDER BY admit_date),
+                  admit_date)                           AS days_since_last,  -- NULL on first visit
+         ROW_NUMBER() OVER (PARTITION BY patient_id ORDER BY admit_date) - 1 AS prior_visits,
+         LEFT(icd10, 1)                                 AS dx_chapter,
+         LN(1 + creatinine)                             AS log_creatinine,
+         IFF(creatinine IS NULL, 1, 0)                  AS creatinine_missing,
+         CASE WHEN hemoglobin < 10 THEN 'severe_anemia' WHEN hemoglobin < 12 THEN 'anemia'
+              WHEN hemoglobin IS NULL THEN 'missing' ELSE 'normal' END AS hgb_band
+  FROM readmit_week5 e),
+drg_stats AS (                                         -- learned on TRAIN only
+  SELECT drg, COUNT(*) AS drg_n, COUNT(*) / SUM(COUNT(*)) OVER () AS drg_freq
+  FROM base WHERE split = 'train' GROUP BY drg)
+SELECT b.*,
+       COALESCE(s.drg_freq, 0)                          AS drg_freq,         -- frequency encoding
+       IFF(COALESCE(s.drg_n, 0) < 20, 'OTHER', b.drg)   AS drg_grouped,      -- rare levels pooled
+       COALESCE(b.days_since_last, 365)                 AS days_since_last_filled,
+       IFF(b.days_since_last IS NULL, 1, 0)             AS first_visit
+FROM base b LEFT JOIN drg_stats s USING (drg);
+```
+
+## Printables
+- Cheat sheet: `day29_v1_cheat_sheet.png`
+- Infographic: `day29_v2_infographic.png`
+- Code worksheet: `day29_v3_worksheet.png`
+- Practice quiz: `day29_v4_quiz.png`
+- PDF: `day29_lesson.pdf`
+
+## Podcast script
+(Audio: `day29_podcast.mp3`)
+
+Hey Todor, welcome to day twenty nine, and welcome to week five. The last two weeks were about models. This week is about the habits that make models work in a real job: feature engineering, pipelines, experiment tracking with MLflow, and Snowpark. Today is the feature engineering toolkit.
+
+Open almost any healthcare data scientist posting and you will see the same words: feature engineering, claims and EHR data, ICD and DRG codes, SQL, and scikit-learn pipelines. Today we practice them on thirty day readmission.
+
+We simulated about two thousand six hundred hospital stays from one thousand patients. Each stay has the messy columns you meet at work. Age and sodium. Length of stay and creatinine, both with a long right tail. Hemoglobin. A payer, an admit type, a discharge disposition. An ICD ten diagnosis code, a DRG code, and an admit date. About eighteen percent of stays came back within thirty days.
+
+The main tool is the column transformer. Think of it as one recipe card per column type, all kept inside the pipeline so every cross validation fold learns its own medians, scales and categories. Here is the toolkit. Plain numbers get a median fill and a standard scaler. Skewed numbers like creatinine get a log transform first, which pulled its skew from about one point nine down to point seven. Hemoglobin gets binned into four groups, because risk jumps sharply when a patient is anemic. In the lowest bin, thirty percent came back, against twelve percent in the highest. Labs that are missing get a zero or one flag, because missing is not random. Twenty eight percent of elective stays had no creatinine, against six percent of emergency stays. Low cardinality categories like payer get one hot encoded. And the ICD code gets grouped to its chapter, just the first letter, so thousands of codes become a handful.
+
+Dates are gold. From the admit date we pulled the weekday, the month, a weekend flag, and days since the same patient's last visit. Patients back within thirty days of a previous stay were readmitted thirty percent of the time, against nine percent when the last visit was more than six months ago. These features only look backward in time, so they are safe to build before the split.
+
+Now the hard one: DRG codes. We had ninety seven of them in training, and seventy nine had fewer than twenty stays. That long tail is where models memorize. We tried three honest options. Target encoding, which replaces each code with a shrunk, cross fitted readmission rate. One hot with rare codes pooled into one infrequent column. And one hot for every single code. We also ran a leaky version on purpose: averaging the readmit rate per DRG on all training rows before cross validation.
+
+Same logistic regression, same five patient folds, only the features changed. Raw numbers alone scored an AUC of point six nine two. The toolkit without DRG, point seven one four. Target encoded, point seven one nine. Rare grouped, point seven two four. All codes, point seven three one. And the leaky version, point seven five two. That top score is a lie. Each validation row's own answer was baked into its DRG average.
+
+Our rule picks the simplest recipe within one standard deviation of the best. That was rare grouped: fifty five columns instead of one hundred thirty three, and it handles brand new codes without crashing. On the test set, opened once, it scored point seven four six. Then get feature names out turned those fifty five columns back into words, so we could read the top weights, like discharge against medical advice and the sepsis DRG. All the data is simulated, so these numbers say nothing about real hospitals.
+
+Your exercise is in the day twenty nine folder of your repo: build the toolkit, race the recipes, catch the leak, and push it to GitHub. There is also a Snowflake SQL version of the same features.
+
+Tomorrow, on day thirty, we write our own custom transformers, so frequency encoding and our date features become real pipeline steps, and we assemble one full pipeline from raw table to prediction, ready for MLflow. See you then.

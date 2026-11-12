@@ -437,6 +437,21 @@
     "XGBoost",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 29,
+   "folder": "day29",
+   "title": "The feature engineering toolkit: ColumnTransformer recipes for labs, codes and dates on 30-day readmission",
+   "tags": [
+    "Feature engineering",
+    "ColumnTransformer",
+    "Target encoding",
+    "One-hot",
+    "Missing indicators",
+    "Readmission",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
