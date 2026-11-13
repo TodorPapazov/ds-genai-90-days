@@ -452,6 +452,22 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 30,
+   "folder": "day30",
+   "title": "Custom scikit-learn transformers and one full pipeline from raw table to prediction on 30-day readmission",
+   "tags": [
+    "Custom transformers",
+    "BaseEstimator",
+    "TransformerMixin",
+    "Pipeline",
+    "GroupKFold",
+    "joblib",
+    "Readmission",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
   }
  ]
 }
