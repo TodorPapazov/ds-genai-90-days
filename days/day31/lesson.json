@@ -1,0 +1,123 @@
+{
+ "day": 31,
+ "title": "Experiment tracking with MLflow: log, compare, register and reload the 30-day readmission pipeline",
+ "concept": "Healthcare data science postings ask for reproducible work and MLOps basics: experiment tracking, model versioning and knowing exactly which data and settings produced a number. MLflow organizes this as an <b>experiment</b> (one question) with many <b>runs</b> (one try each). In a run you log <b>params</b> (knobs such as <code>C</code>), <b>metrics</b> (scores such as <code>cv_auc</code>), <b>tags</b> (context such as a data fingerprint and the CV scheme) and <b>artifacts</b> (files: charts, feature lists, the model). Everything lives in a local SQLite file (<code>sqlite:///mlflow.db</code>), with artifacts in <code>./mlruns</code>, so no server is needed. On Day 30's 2,655 simulated stays (seed 30, readmit rate 17.8%, same patient split), <code>mlflow.sklearn.autolog()</code> logged <b>147 params</b>, 4 artifacts and a <b>training</b> AUC of 0.749, which is optimistic because it scores rows the model just saw. Manual logging gave each of 4 variants one run with 4 params, 5 tags (including the data file md5), <code>fold_auc</code> per step, CV metrics, a chart and a JSON feature list. GroupKFold CV AUC: DRG rare one-hot 0.723, frequency encoder <b>0.724</b>, both 0.724, frequency with C=0.05 0.723 (fold sd 0.031 to 0.038). <code>mlflow.search_runs</code> returned the runs as a pandas DataFrame; the Day 30 rule (simplest within 1 sd of the best, limit 0.693) picked the frequency encoder with C=0.5 (39 features). Test AUC opened once: <b>0.743</b>, matching Day 30. The champion was logged with a signature (12 typed input columns), <code>code_paths</code> for the custom transformers and registered as <code>readmit30_pipeline</code> v1 with alias <code>@champion</code>. Gotcha: MLflow 3.18 saves scikit-learn models with skops, which refused our custom classes until we listed them in <code>skops_trusted_types</code>. Loading by alias with pyfunc and with sklearn gave identical predictions; the signature blocked a missing <code>drg</code> column and age sent as text, but let a missing <code>creatinine</code> through (it had NaN in the sample, so it was marked optional) and sklearn caught it. Rerunning the champion's CV reproduced the logged AUC to 6 decimals (0.723927). All data is simulated for teaching.",
+ "stats": [
+  [
+   "Data",
+   "Day 30 table: 2,655 simulated stays, 1,000 patients (seed 30), readmit rate 17.8%, train 1,997 / test 658 by patient, md5 312070c916ba"
+  ],
+  [
+   "Tracking",
+   "MLflow 3.18.0, sqlite:///mlflow.db, artifacts in ./mlruns, experiment day31_readmit30, 6 runs (1 autolog, 4 CV variants, 1 champion)"
+  ],
+  [
+   "Autolog vs manual",
+   "autolog: 147 params, 4 artifacts, training AUC 0.749 (no CV); manual: 4 params + 5 tags + fold_auc steps + CV metrics per run"
+  ],
+  [
+   "CV ROC AUC",
+   "rare C=0.5 0.723 (53 cols), freq C=0.5 0.724 (39), freq+rare C=0.5 0.724 (54), freq C=0.05 0.723 (39); fold sd 0.031 to 0.038"
+  ],
+  [
+   "Rule + test",
+   "best 0.724 - 1 sd = 0.693; fewest features, then higher AUC: freq_C0.5; test AUC 0.743"
+  ],
+  [
+   "Registry",
+   "readmit30_pipeline v1, alias @champion; pyfunc and sklearn reloads identical to the original predictions"
+  ],
+  [
+   "Signature",
+   "drop drg or send age as text: blocked by MLflow; drop creatinine (optional, NaN in sample): passed MLflow, failed in sklearn"
+  ],
+  [
+   "Reproducible",
+   "rerun of the champion CV: 0.723927 logged vs 0.723927 rerun"
+  ]
+ ],
+ "steps": [
+  "In your repo, create <code>day31/</code>, run <code>conda activate ds90</code>, <code>pip install mlflow</code>, copy <code>../day30/readmit_transformers.py</code> into <code>day31/</code> and open a notebook <code>day31/mlflow_readmit.ipynb</code> in VS Code.",
+  "Run snippet 1: load Day 30's <code>readmit_raw.csv</code>, rebuild the same patient split, compute the md5 fingerprint, and define <code>build(drg, C)</code>.",
+  "Run snippet 2: point MLflow at <code>sqlite:///mlflow.db</code>, create the experiment, and try <code>autolog</code>. Note how many params it logged and that its AUC is a training score.",
+  "Write your selection rule in a markdown cell before racing: best CV AUC, then the simplest variant within 1 sd.",
+  "Run snippet 3: race 4 variants by hand, one run each, with tags, params, <code>fold_auc</code> per step, CV metrics, a chart and a feature list.",
+  "In a terminal, run <code>mlflow ui --backend-store-uri sqlite:///mlflow.db</code>, open http://127.0.0.1:5000 and compare the 4 runs (table, fold_auc chart, artifacts).",
+  "Run snippet 4: <code>search_runs</code> into pandas, apply the rule, refit the champion, open the test set once, and log + register the model with a signature and <code>code_paths</code>. If you hit <code>UntrustedTypesFoundException</code>, read it, then allow-list your own classes.",
+  "Run snippet 5: set the <code>@champion</code> alias, load with pyfunc and sklearn, compare predictions, run the 3 contract tests, and rerun the champion CV to confirm the logged AUC.",
+  "Write <code>day31/README.md</code>: the run table from <code>search_runs</code>, autolog vs manual, the signature gotcha, the reproducibility check and limits (simulated data). Add <code>mlflow.db</code> and <code>mlruns/</code> to <code>.gitignore</code>.",
+  "Commit and push (snippet 6): <code>git add .gitignore day31</code>, <code>git commit -m \"Day 31: ...\"</code>, <code>git push</code>.",
+  "<b>Stretch:</b> build the training table in Snowflake with Snowpark (snippet 7), pull it to pandas and log the same race to the same experiment with a tag <code>source=snowflake</code>."
+ ],
+ "snippets": [
+  {
+   "title": "1. Same data, same split, same build() as Day 30 (now with C as a knob)",
+   "lang": "python",
+   "code": "# Day 31 setup: the SAME raw table, split and pipeline builder as Day 30, so every MLflow run is comparable.\n# In the shell first:  cp ../day30/readmit_transformers.py .   (MLflow ships this file with the model)\nimport hashlib\nimport numpy as np\nimport pandas as pd\nfrom sklearn.model_selection import GroupShuffleSplit, GroupKFold\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.impute import SimpleImputer, MissingIndicator\nfrom sklearn.preprocessing import StandardScaler, OneHotEncoder, FunctionTransformer, KBinsDiscretizer\nfrom sklearn.linear_model import LogisticRegression\nfrom readmit_transformers import FrequencyEncoder, DateFeatures, icd_chapter\n\nRAW = \"../day30/readmit_raw.csv\"                       # simulated, seed 30 (Day 30 snippet 1)\ndf = pd.read_csv(RAW, parse_dates=[\"admit_date\"], dtype={\"drg\": str, \"icd10\": str})\ndata_md5 = hashlib.md5(open(RAW, \"rb\").read()).hexdigest()[:12]    # fingerprint of the exact data file\ngss = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=30)\ntr_idx, te_idx = next(gss.split(df, groups=df.patient_id))           # patients never cross the split\nX = df.drop(columns=\"readmit30\")\ntrain, test = X.iloc[tr_idx], X.iloc[te_idx]\nytr, yte, gtr = df.readmit30.iloc[tr_idx], df.readmit30.iloc[te_idx], train.patient_id\ngkf = GroupKFold(5)\nlog1p = FunctionTransformer(np.log1p, feature_names_out=\"one-to-one\")\n\n\ndef build(drg=\"freq\", C=0.5):                          # Day 30 build(), now with C as a tracked knob\n    parts = [\n        (\"dates\", make_pipeline(DateFeatures(), StandardScaler()), [\"patient_id\", \"admit_date\"]),\n        (\"num\", make_pipeline(SimpleImputer(strategy=\"median\"), StandardScaler()), [\"age\", \"sodium\"]),\n        (\"log\", make_pipeline(SimpleImputer(strategy=\"median\"), log1p, StandardScaler()), [\"los_days\", \"creatinine\"]),\n        (\"hgb_bin\", make_pipeline(SimpleImputer(strategy=\"median\"),\n                                  KBinsDiscretizer(n_bins=4, encode=\"onehot-dense\", strategy=\"quantile\",\n                                                   quantile_method=\"averaged_inverted_cdf\")), [\"hemoglobin\"]),\n        (\"miss\", MissingIndicator(), [\"creatinine\", \"hemoglobin\", \"sodium\"]),\n        (\"icd\", make_pipeline(FunctionTransformer(icd_chapter, feature_names_out=\"one-to-one\"),\n                              OneHotEncoder(handle_unknown=\"ignore\", sparse_output=False)), [\"icd10\"]),\n        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\", sparse_output=False), [\"payer\", \"admit_type\", \"discharge\"]),\n    ]\n    if \"freq\" in drg:\n        parts.append((\"drg_freq\", make_pipeline(FrequencyEncoder(), StandardScaler()), [\"drg\"]))\n    if \"rare\" in drg:\n        parts.append((\"drg_oh\", OneHotEncoder(min_frequency=20, handle_unknown=\"infrequent_if_exist\",\n                                              sparse_output=False), [\"drg\"]))\n    pre = ColumnTransformer(parts, remainder=\"drop\")\n    return Pipeline([(\"prep\", pre), (\"clf\", LogisticRegression(C=C, max_iter=3000))]).set_output(transform=\"pandas\")\n\nprint(df.shape, \"readmit rate\", round(df.readmit30.mean(), 3), \"| train\", len(train), \"test\", len(test), \"| data md5\", data_md5)"
+  },
+  {
+   "title": "2. Local tracking store (SQLite) and the autolog demo",
+   "lang": "python",
+   "code": "# Tracking store: one local SQLite file (mlflow.db). Artifacts (models, charts) go to a local folder.\nimport mlflow, mlflow.sklearn\nmlflow.set_tracking_uri(\"sqlite:///mlflow.db\")          # browse later: mlflow ui --backend-store-uri sqlite:///mlflow.db\nexp = mlflow.set_experiment(\"day31_readmit30\")\nprint(\"experiment\", exp.name, \"id\", exp.experiment_id, \"| artifacts:\", exp.artifact_location)\n\n# Option A: autolog. One line, logs every pipeline parameter plus TRAINING metrics on the fit call.\nmlflow.sklearn.autolog(log_models=False, silent=True)\nwith mlflow.start_run(run_name=\"autolog_demo\") as r:\n    mlflow.set_tag(\"stage\", \"autolog_demo\")\n    build(\"freq\").fit(train, ytr)\nmlflow.sklearn.autolog(disable=True)                    # switch off before the manual race\n\nauto = mlflow.get_run(r.info.run_id).data\nprint(\"autolog logged\", len(auto.params), \"params, e.g.\", {k: auto.params[k] for k in [\"clf__C\", \"clf__max_iter\"]})\nprint(\"autolog metrics:\", {k: round(v, 3) for k, v in sorted(auto.metrics.items())})\nprint(\"missing: no GroupKFold CV score, no data fingerprint, no reason for the run\")"
+  },
+  {
+   "title": "3. Manual logging: 4 pipeline variants, tags, params, fold metrics, artifacts",
+   "lang": "python",
+   "code": "# Option B: manual logging. Four pipeline variants, each one run with params, tags, CV metrics and artifacts.\nfrom sklearn.model_selection import cross_validate\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nVARIANTS = {\"rare_C0.5\": (\"rare\", 0.5), \"freq_C0.5\": (\"freq\", 0.5),\n            \"freq+rare_C0.5\": (\"freq+rare\", 0.5), \"freq_C0.05\": (\"freq\", 0.05)}\nfor name, (drg, C) in VARIANTS.items():\n    with mlflow.start_run(run_name=name):\n        mlflow.set_tags({\"stage\": \"cv_race\", \"data_md5\": data_md5, \"cv\": \"GroupKFold(5) by patient_id\",\n                         \"data\": \"simulated readmission, seed 30\", \"author\": \"Todor\"})\n        mlflow.log_params({\"drg_encoding\": drg, \"C\": C, \"model\": \"LogisticRegression\", \"n_splits\": 5})\n        cv = cross_validate(build(drg, C), train, ytr, groups=gtr, cv=gkf,\n                            scoring=[\"roc_auc\", \"neg_log_loss\"], return_estimator=True)\n        feats = list(cv[\"estimator\"][0][:-1].get_feature_names_out())\n        for k, a in enumerate(cv[\"test_roc_auc\"], start=1):\n            mlflow.log_metric(\"fold_auc\", a, step=k)                    # one value per fold = a small curve\n        mlflow.log_metrics({\"cv_auc\": cv[\"test_roc_auc\"].mean(), \"cv_auc_sd\": cv[\"test_roc_auc\"].std(),\n                            \"cv_logloss\": -cv[\"test_neg_log_loss\"].mean(), \"n_features\": len(feats)})\n        fig, ax = plt.subplots(figsize=(4, 2.5))\n        ax.bar(range(1, 6), cv[\"test_roc_auc\"]); ax.set_ylim(0.6, 0.85); ax.set_title(f\"{name}: fold AUC\")\n        fig.savefig(\"fold_auc.png\", dpi=100); plt.close(fig)\n        mlflow.log_artifact(\"fold_auc.png\", artifact_path=\"charts\")      # any file: charts, reports\n        mlflow.log_dict({\"features\": feats}, \"features.json\")             # small JSON without a temp file\n        print(f\"{name:15s} cv_auc {cv['test_roc_auc'].mean():.3f}  sd {cv['test_roc_auc'].std():.3f}  features {len(feats)}\")"
+  },
+  {
+   "title": "4. search_runs into pandas, the 1 sd rule, log + register the champion with a signature",
+   "lang": "python",
+   "code": "# Read the runs back into pandas, apply the Day 30 rule, then log + register ONE champion with a signature.\nfrom mlflow.models import infer_signature\nfrom sklearn.metrics import roc_auc_score\n\nruns = mlflow.search_runs(experiment_names=[\"day31_readmit30\"], filter_string=\"tags.stage = 'cv_race'\",\n                          order_by=[\"metrics.cv_auc DESC\"])\ncols = [\"tags.mlflow.runName\", \"params.drg_encoding\", \"params.C\", \"metrics.cv_auc\", \"metrics.cv_auc_sd\",\n        \"metrics.n_features\", \"run_id\"]\nboard = runs[cols].rename(columns=lambda c: c.split(\".\")[-1])\nprint(board.drop(columns=\"run_id\").round(3).to_string(index=False))\n\ntop = board.iloc[0]; limit = top.cv_auc - top.cv_auc_sd\nok = board[board.cv_auc >= limit].sort_values([\"n_features\", \"cv_auc\"], ascending=[True, False])\nchamp = ok.iloc[0]                                      # simplest within 1 sd, ties -> higher CV AUC\nprint(f\"best {top.runName} {top.cv_auc:.3f} | limit {limit:.3f} | champion {champ.runName}\")\n\nTRUSTED = [\"numpy.dtype\", \"readmit_transformers.DateFeatures\", \"readmit_transformers.FrequencyEncoder\",\n           \"readmit_transformers.icd_chapter\"]           # first try failed with UntrustedTypesFoundException\nwith mlflow.start_run(run_name=f\"champion_{champ.runName}\") as run:\n    final = build(champ.drg_encoding, float(champ.C)).fit(train, ytr)\n    p_te = final.predict_proba(test)[:, 1]\n    test_auc = roc_auc_score(yte, p_te)                 # opened ONCE, logged once\n    sig = infer_signature(train.head(100), final.predict_proba(train.head(100)))\n    mlflow.set_tags({\"stage\": \"champion\", \"cv_run_id\": champ.run_id, \"data_md5\": data_md5})\n    mlflow.log_params({\"drg_encoding\": champ.drg_encoding, \"C\": float(champ.C)})\n    mlflow.log_metrics({\"cv_auc\": champ.cv_auc, \"test_auc\": test_auc})\n    info = mlflow.sklearn.log_model(final, name=\"model\", signature=sig, input_example=train.head(3),\n                                    pyfunc_predict_fn=\"predict_proba\",\n                                    code_paths=[\"readmit_transformers.py\"],   # the custom classes travel along\n                                    skops_trusted_types=TRUSTED,              # MLflow 3 saves with skops: allow-list them\n                                    registered_model_name=\"readmit30_pipeline\")\nprint(f\"test AUC (once) {test_auc:.3f} | model {info.model_uri} | registered version {info.registered_model_version}\")\nprint(\"signature inputs:\", len(sig.inputs.input_names()), \"columns, e.g.\", sig.inputs.to_dict()[:2])"
+  },
+  {
+   "title": "5. Load by alias, contract tests, reproducibility check",
+   "lang": "python",
+   "code": "# Load the registered model by alias, prove identical predictions, test the signature, and check reproducibility.\nfrom mlflow import MlflowClient\nclient = MlflowClient()\nclient.set_registered_model_alias(\"readmit30_pipeline\", \"champion\", info.registered_model_version)\n\npyf = mlflow.pyfunc.load_model(\"models:/readmit30_pipeline@champion\")     # generic loader (what serving uses)\np_pyf = np.asarray(pyf.predict(test))[:, 1]\nskm = mlflow.sklearn.load_model(\"models:/readmit30_pipeline@champion\")    # back to a real sklearn Pipeline\nprint(\"pyfunc == original:\", np.allclose(p_pyf, p_te), \"| sklearn == original:\", np.allclose(skm.predict_proba(test)[:, 1], p_te))\nprint(\"risk for 3 raw rows:\", p_pyf[:3].round(3))\n\ndef contract(frame):                                    # the signature guards the input contract\n    try:\n        pyf.predict(frame); return \"accepted\"\n    except Exception as e:\n        return type(e).__name__ + (\" (MLflow schema)\" if \"enforce schema\" in str(e) else \" (sklearn)\")\nprint(\"drop drg (required):        \", contract(test.drop(columns=\"drg\")))\nprint(\"age sent as text:           \", contract(test.assign(age=test.age.astype(str))))\nprint(\"drop creatinine (optional): \", contract(test.drop(columns=\"creatinine\")))   # NaN in sample -> optional\n\n# Reproducibility: rerun the champion variant's CV with the same data + seed, compare to the logged value.\nagain = cross_validate(build(champ.drg_encoding, float(champ.C)), train, ytr, groups=gtr, cv=gkf, scoring=\"roc_auc\")\nprint(f\"logged cv_auc {champ.cv_auc:.6f} | rerun {again['test_score'].mean():.6f} | same: {np.isclose(champ.cv_auc, again['test_score'].mean())}\")\n\nallr = mlflow.search_runs(experiment_names=[\"day31_readmit30\"])\nprint(\"runs in experiment:\", len(allr), allr[\"tags.stage\"].value_counts().to_dict())\nauto_art = [a.path for a in client.list_artifacts(r.info.run_id)]\nprint(\"autolog params vs manual params per run:\", len(auto.params), \"vs\", 4, \"| autolog artifacts:\", auto_art)"
+  },
+  {
+   "title": "6. Push to GitHub",
+   "lang": "bash",
+   "code": "cd ~/ds-genai-90-days\nprintf 'day31/mlflow.db\\nday31/mlruns/\\n' >> .gitignore   # tracking store stays local\ngit add .gitignore day31\ngit commit -m \"Day 31: MLflow experiment tracking on the readmission pipeline\"\ngit push"
+  },
+  {
+   "title": "7. Stretch: Snowpark table, same MLflow experiment",
+   "lang": "python",
+   "code": "# Stretch (not run here, needs your Snowflake account): Snowpark builds the table, MLflow tracks the run.\n# pip install snowflake-snowpark-python ; connection values come from your own config, never hard-coded.\nfrom snowflake.snowpark import Session\nfrom snowflake.snowpark.functions import col\nsession = Session.builder.config(\"connection_name\", \"ds90\").create()     # reads ~/.snowflake/connections.toml\nraw = session.table(\"READMIT_RAW\")                                         # Day 30 table loaded into Snowflake\ntrain_sf = raw.filter(col(\"SPLIT\") == \"train\").to_pandas()                 # pushdown filter, then pandas\ntrain_sf.columns = train_sf.columns.str.lower()\n\nwith mlflow.start_run(run_name=\"freq_C0.5_snowflake\"):\n    mlflow.set_tags({\"stage\": \"cv_race\", \"source\": \"snowflake\", \"table\": \"READMIT_RAW\"})\n    mlflow.log_params({\"drg_encoding\": \"freq\", \"C\": 0.5})\n    cv = cross_validate(build(\"freq\", 0.5), train_sf.drop(columns=[\"readmit30\", \"split\"]), train_sf.readmit30,\n                        groups=train_sf.patient_id, cv=GroupKFold(5), scoring=\"roc_auc\")\n    mlflow.log_metric(\"cv_auc\", cv[\"test_score\"].mean())                   # should match the local run"
+  }
+ ],
+ "images": [
+  [
+   "day31_v1_cheat_sheet.png",
+   "Cheat sheet"
+  ],
+  [
+   "day31_v2_infographic.png",
+   "Infographic"
+  ],
+  [
+   "day31_v3_worksheet.png",
+   "Code worksheet"
+  ],
+  [
+   "day31_v4_quiz.png",
+   "Practice quiz"
+  ]
+ ],
+ "pdf": "day31_lesson.pdf",
+ "audio": "day31_podcast.mp3",
+ "podcast": [
+  "Hey Todor, welcome to day thirty one. Yesterday we built one full scikit-learn pipeline for thirty day readmission, from the raw table to a probability. Today we stop keeping score in our heads and start keeping it in MLflow.",
+  "Why does this matter for a job? Healthcare data science postings keep asking for reproducible work and some MLOps: experiment tracking, model versioning, being able to say exactly which data and which settings produced a number. MLflow is one of the most common tools for that, and it runs fine on a laptop.",
+  "Here is the vocabulary. An experiment is one question, like which readmission pipeline should we use. A run is one try. Inside a run you log params, which are the knobs you set, metrics, which are the scores, tags, which are the context, and artifacts, which are files like charts or the model itself. We stored everything in one small SQLite file, so nothing needs a server.",
+  "First we tried autolog. One line, and MLflow recorded one hundred forty seven parameters from the pipeline, plus a confusion matrix, a ROC curve and a training AUC of about point seven four nine. That sounds great, but it is a training score, measured on rows the model had just seen. It is not our honest number.",
+  "So we logged by hand. Four pipeline variants, one run each: DRG codes pooled with one hot encoding, the custom frequency encoder from yesterday, both together, and the frequency encoder with ten times stronger regularization. Each run got four params, five tags including a fingerprint of the exact data file, the five fold AUCs as a little curve, the mean and spread, a chart, and the list of feature names.",
+  "The results were very close. Group k fold AUC by patient was about point seven two three or point seven two four for all four, with fold to fold swings of about three to four points. Then we pulled every run back into a pandas table with search runs, and applied the same rule as yesterday: take the best, subtract one standard deviation, and pick the simplest variant that still qualifies. The winner was the frequency encoder with the default regularization, thirty nine features. Opened once, the test set gave an AUC of point seven four three. Same numbers as day thirty, which is exactly the point. The tracking reproduced them.",
+  "Next we logged that champion as a model with a signature. A signature is the input contract: twelve named columns with types. We also shipped the file with our custom transformers along with the model, because a saved pipeline only remembers where a class lives, not its code. And here is a real gotcha we hit. The newest MLflow saves scikit-learn models in a safer format that refuses unknown classes, so the first save failed. The fix was to list our own classes as trusted.",
+  "Then we registered the model, gave version one the alias champion, and loaded it back by that alias. Predictions matched the original pipeline exactly. When we dropped the DRG column or sent age as text, MLflow blocked the request. But when we dropped creatinine, MLflow let it through, because creatinine had missing values in the sample, so the signature marked it optional. Scikit-learn caught it instead. Good to know before anyone calls this in production.",
+  "Last check: we reran the champion's cross validation from scratch and got the same AUC as the logged value, to six decimal places. That is reproducibility you can show an interviewer.",
+  "All the data is simulated for teaching. Your exercise is in the day thirty one folder of your repo. Remember to keep the database file and the runs folder out of git. Tomorrow, on day thirty two, we move the feature work into Snowflake with Snowpark, and log those runs to the same MLflow experiment. See you then."
+ ],
+ "zip": "day31_all_materials.zip",
+ "md": "lesson.md"
+}

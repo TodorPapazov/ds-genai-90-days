@@ -468,6 +468,23 @@
     "scikit-learn",
     "Snowflake SQL"
    ]
+  },
+  {
+   "day": 31,
+   "folder": "day31",
+   "title": "Experiment tracking with MLflow: log, compare, register and reload the 30-day readmission pipeline",
+   "tags": [
+    "MLflow",
+    "Experiment tracking",
+    "Model registry",
+    "Model signature",
+    "autolog",
+    "GroupKFold",
+    "Reproducibility",
+    "Readmission",
+    "scikit-learn",
+    "Snowpark"
+   ]
   }
  ]
 }
