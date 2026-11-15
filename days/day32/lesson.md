@@ -1,0 +1,306 @@
+# Day 32: Snowpark for Python: readmission features in Snowflake, lazy evaluation and pushdown, scored with the Day 31 pipeline
+
+## Concept
+Healthcare data job postings often list Snowflake next to SQL and Python. Claims and encounter tables are large and hold PHI, so the practical skill is doing the heavy row work where the data lives and moving only small, model-ready results. Snowpark for Python gives you a pandas-style DataFrame API (filter, select, with_column, join, group_by().agg(), window functions) that Snowflake translates to SQL and runs in the warehouse: SQL pushdown. It is lazy: those calls only build a plan; an action (collect, count, show, to_pandas, save_as_table) runs it. With no Snowflake account on the box, everything ran in local testing mode (Session.builder.config("local_testing", True), Snowpark 1.57.0). Defining a filter plus group_by took 20 ms and touched no rows; collect() took 56 ms. A column typo raised no error until collect(). Honest limits of local testing: session.sql and explain() are not supported, df.queries shows only a placeholder (SELECT MOCK_TEST_FAKE_QUERY()), and month, dayofweek, round and log are not implemented (we used date_part and ln). The lesson includes the real-account version with connection values from environment variables. On Day 30's 2,655 simulated stays (1,000 patients, same patient split: train 1,997, test 658), window functions built PRIOR_VISITS, DAYS_SINCE_LAST and PRIOR_AVG_LOS (earlier stays only), and a train-only group_by on DRG built DRG_SHARE and DRG_AVG_LOS, joined back to every row into a 27-column READMIT_FEATURES table. Rebuilt in pandas, the window features matched exactly. Two gotchas: NUMBER / NUMBER division keeps 6 decimals (off by 5.0e-07 until we cast to double), and Snowflake's day of week uses 0 = Sunday while pandas uses 0 = Monday (Snowflake = (pandas + 1) % 7 on all rows). Pulling only the 658 test stays and 12 raw columns to pandas, the Day 31 registered champion scored test AUC 0.743, identical to scoring the CSV. Scores went back to a READMIT_SCORES table and a join + group_by built a payer worklist (top 10% cut 0.381). Adding the two Snowpark history features did not help: GroupKFold AUC 0.722 vs 0.724 for the champion (fold sd 0.031), so the simpler model stays. A stored procedure (session.sproc.register) wrapped the feature build so it can run inside Snowflake; Snowpark ML (snowflake-ml-python) adds sklearn-style preprocessing, training and a model registry in Snowflake (Day 33). All data is simulated for teaching.
+
+## Key numbers
+- **Data:** Day 30 table: 2,655 simulated stays, 1,000 patients (seed 30), train 1,997 / test 658 by patient (same split as Days 30 to 31)
+- **Engine:** snowflake-snowpark-python 1.57.0, local testing mode (in-memory, no account); tables READMIT_RAW, PATIENT_SPLIT, READMIT_FEATURES, READMIT_SCORES
+- **Lazy evaluation:** define filter + group_by: 20 ms, nothing ran; collect(): 56 ms; a column typo failed only at collect()
+- **Features:** 27 columns: PRIOR_VISITS, DAYS_SINCE_LAST, PRIOR_AVG_LOS (window), DRG_SHARE, DRG_AVG_LOS (train-only group_by + join), flags; first visits 1000
+- **Parity with pandas:** windows exact (max diff 0 or 2e-15); DRG share NUMBER division off by 5.0e-07, exact after cast("double"); weekday codes shifted by one
+- **Scoring:** to_pandas 658 x 12 cols; Day 31 @champion test AUC 0.743, identical risks to the CSV; top 10% cut 0.381
+- **Worklist:** mean risk Medicaid 0.218, Commercial 0.187, Medicare 0.177 (actual 0.134), Self-pay 0.161
+- **Do new features help?:** GroupKFold AUC champion 0.724 vs + 2 Snowpark features 0.722 (sd 0.031): no gain, logged to MLflow day32_snowpark
+- **Local testing limits:** no session.sql, no explain, placeholder df.queries; month, dayofweek, round, log not implemented; stored procedure and UDF worked
+
+## Hands-on (60-90 min)
+1. In your repo, create day32/, run conda activate ds90, pip install snowflake-snowpark-python, copy day30/readmit_transformers.py into day32/ and open day32/snowpark_readmit.ipynb in VS Code. The code reads ../day30/readmit_raw.csv and the Day 31 registry in ../day31/mlflow.db.
+2. Run snippet 1: start a local testing Session, load READMIT_RAW and PATIENT_SPLIT (same patient split as Day 30), then time the define step vs collect(). Make a column typo on purpose and note when it fails.
+3. Try session.sql("select 1") and write down the local testing limit you hit.
+4. Run snippet 2: window features per patient (PRIOR_VISITS, DAYS_SINCE_LAST, PRIOR_AVG_LOS with rows_between(UNBOUNDED_PRECEDING, -1)), date parts and flags, then a train-only DRG group_by joined back, saved as READMIT_FEATURES.
+5. Run snippet 3: rebuild the same features in pandas and compare every row. Explain the DRG_SHARE_NUM gap and the weekday code gap in your own words.
+6. Run snippet 4: filter + select the test rows, to_pandas(), score with models:/readmit30_pipeline@champion, confirm the AUC and identical risks, write READMIT_SCORES, and build the payer worklist with a join + group_by.
+7. Run snippet 5: GroupKFold race of the champion vs champion + 2 Snowpark features, logged to a day32_snowpark MLflow experiment; then register and call the build_features stored procedure.
+8. Read snippet 6 (the same features in Snowflake SQL) and compare it line by line to your Snowpark code.
+9. Optional, on your own account: put your connection values in environment variables (never in code) and run snippet 7. Print q.queries to see the SQL Snowpark generated, and run snippet 6 in a worksheet.
+10. Write day32/README.md: the tables, the parity checks, the two gotchas, the AUC, the no-gain feature test, local testing limits, and that the data is simulated. Add day32/mlflow.db, day32/mlruns/ and .env to .gitignore.
+11. Commit and push (snippet 8): git add .gitignore day32, git commit -m "Day 32: ...", git push.
+
+## Code
+### 1. Local testing Session, tables, lazy evaluation and its limits
+```python
+# Day 32 setup: a Snowpark Session in LOCAL TESTING mode (no account needed), the Day 30 table loaded as a
+# Snowflake-style table, and the SAME patient split as Days 30-31 stored as a second table we can join.
+import os, time
+os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import GroupShuffleSplit
+from snowflake.snowpark import Session, Window
+from snowflake.snowpark import functions as F
+
+session = Session.builder.config("local_testing", True).create()   # in-memory emulator of Snowflake
+raw = pd.read_csv("../day30/readmit_raw.csv", parse_dates=["admit_date"], dtype={"drg": str, "icd10": str})
+tr_idx, te_idx = next(GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=30)
+                      .split(raw, groups=raw.patient_id))             # identical split to Day 30 and 31
+split = pd.DataFrame({"PATIENT_ID": raw.patient_id, "SPLIT": "train"})
+split.loc[te_idx, "SPLIT"] = "test"
+split = split.drop_duplicates()                                        # one row per patient
+
+up = raw.copy(); up.columns = up.columns.str.upper()                   # Snowflake stores names in UPPER case
+session.create_dataframe(up).write.save_as_table("READMIT_RAW", mode="overwrite")
+session.create_dataframe(split).write.save_as_table("PATIENT_SPLIT", mode="overwrite")
+stays = session.table("READMIT_RAW")                                   # a DataFrame that POINTS at the table
+print("READMIT_RAW rows", stays.count(), "| PATIENT_SPLIT rows", session.table("PATIENT_SPLIT").count())
+
+# Lazy evaluation: building a DataFrame runs nothing. Only an action (collect, count, show, to_pandas) executes.
+t0 = time.perf_counter()
+q = (stays.filter(F.col("AGE") >= 65)
+          .group_by("PAYER").agg(F.count("*").alias("N_STAYS"), F.avg("READMIT30").alias("READMIT_RATE")))
+t_def = (time.perf_counter() - t0) * 1000
+t0 = time.perf_counter(); rows = q.sort("PAYER").collect(); t_run = (time.perf_counter() - t0) * 1000
+print(f"define: {t_def:.1f} ms (nothing ran) | collect: {t_run:.1f} ms")
+for r in rows: print(f"  65+ {r.PAYER:10s} stays {r.N_STAYS:4d}  readmit rate {float(r.READMIT_RATE):.3f}")
+print("q.queries in local testing:", q.queries["queries"])           # a real account shows the generated SQL here
+bad = stays.with_column("X", F.col("LOS_DAYZ") + 1)                    # typo: no error yet, nothing ran
+try:
+    bad.collect()
+except Exception as e:
+    print("typo only fails at the action:", type(e).__name__, str(e)[:40])
+try:
+    session.sql("select 1").collect()
+except NotImplementedError as e:
+    print("local testing limit:", str(e))
+```
+
+### 2. Feature engineering in Snowpark: windows, date parts, train-only group_by + join
+```python
+# Feature engineering IN Snowpark: window functions (per-patient history), date parts, flags,
+# and a train-only group_by/agg joined back. Everything stays lazy until the end.
+w = Window.partition_by("PATIENT_ID").order_by("ADMIT_DATE")
+w_prev = w.rows_between(Window.UNBOUNDED_PRECEDING, -1)               # strictly EARLIER stays only (no leakage)
+feat = (stays.join(session.table("PATIENT_SPLIT"), on="PATIENT_ID", how="inner")
+    .with_column("PRIOR_VISITS", F.row_number().over(w) - 1)
+    .with_column("DAYS_SINCE_LAST", F.datediff("day", F.lag("ADMIT_DATE").over(w), F.col("ADMIT_DATE")))
+    .with_column("PRIOR_AVG_LOS", F.avg("LOS_DAYS").over(w_prev))
+    .with_column("FIRST_VISIT", F.iff(F.col("DAYS_SINCE_LAST").is_null(), 1, 0))
+    .with_column("ADMIT_DOW_SF", F.date_part("dayofweek", F.col("ADMIT_DATE")))   # Snowflake: 0 = Sunday
+    .with_column("WINTER", F.iff(F.date_part("month", F.col("ADMIT_DATE")).isin([12, 1, 2]), 1, 0))
+    .with_column("ICD_CHAPTER", F.substr("ICD10", 1, 1))
+    .with_column("CREAT_HIGH", F.iff(F.col("CREATININE") > 1.5, 1, 0))
+    .with_column("LOG_LOS", F.ln(F.col("LOS_DAYS") + 1)))
+
+n_train = int(feat.filter(F.col("SPLIT") == "train").count())   # int(): local testing returns numpy ints
+drg_stats = (feat.filter(F.col("SPLIT") == "train")                    # learn from TRAIN rows only
+    .group_by("DRG").agg(F.count("*").alias("DRG_N"), F.avg("LOS_DAYS").alias("DRG_AVG_LOS"))
+    .with_column("DRG_SHARE_NUM", F.col("DRG_N") / F.lit(n_train))       # NUMBER / NUMBER: rounded to 6 decimals
+    .with_column("DRG_SHARE", F.col("DRG_N").cast("double") / F.lit(n_train)))   # cast first: full precision
+feat = (feat.join(drg_stats, on="DRG", how="left")                       # test DRGs unseen in train -> NULL
+    .with_column("DRG_SHARE", F.coalesce(F.col("DRG_SHARE"), F.lit(0.0))))
+feat.write.save_as_table("READMIT_FEATURES", mode="overwrite")         # the action: features land in a table
+ft = session.table("READMIT_FEATURES")
+print("READMIT_FEATURES", ft.count(), "rows x", len(ft.columns), "cols | train rows", n_train,
+      "| DRGs learned from train", drg_stats.count())
+ft.filter(F.col("PATIENT_ID") == 2).select("PATIENT_ID", "ADMIT_DATE", "PRIOR_VISITS", "DAYS_SINCE_LAST",
+                                            "PRIOR_AVG_LOS", "DRG", "DRG_SHARE").sort("ADMIT_DATE").show()
+```
+
+### 3. Same features in pandas: parity checks and two gotchas
+```python
+# Same features in pandas, row by row, to prove the Snowpark version is right (and spot one gotcha).
+sp = ft.to_pandas().sort_values(["PATIENT_ID", "ADMIT_DATE"]).reset_index(drop=True)
+pdx = raw.merge(split.rename(columns={"PATIENT_ID": "patient_id", "SPLIT": "split"}), on="patient_id")
+pdx = pdx.sort_values(["patient_id", "admit_date"]).reset_index(drop=True)
+g = pdx.groupby("patient_id")
+pdx["prior_visits"] = g.cumcount()
+pdx["days_since_last"] = g.admit_date.diff().dt.days
+pdx["prior_avg_los"] = g.los_days.transform(lambda s: s.shift().expanding().mean())
+tr = pdx[pdx.split == "train"]
+pdx["drg_share"] = pdx.drg.map(tr.drg.value_counts() / len(tr)).fillna(0.0)
+pdx["admit_dow_pd"] = pdx.admit_date.dt.dayofweek                       # pandas: 0 = Monday
+
+checks = {"PRIOR_VISITS": "prior_visits", "DAYS_SINCE_LAST": "days_since_last",
+          "PRIOR_AVG_LOS": "prior_avg_los", "DRG_SHARE_NUM": "drg_share", "DRG_SHARE": "drg_share"}
+for a, b in checks.items():
+    x, y = sp[a].astype(float), pdx[b].astype(float)
+    same = bool((((x - y).abs() < 1e-9) | (x.isna() & y.isna())).all())
+    print(f"{a:16s} Snowpark == pandas: {same}   max diff {(x - y).abs().max():.1e}   nulls {int(x.isna().sum())}")
+print("weekday codes differ:", float((sp.ADMIT_DOW_SF != pdx.admit_dow_pd).mean()) == 1.0,
+      "| Snowflake 0=Sunday, pandas 0=Monday; first stay (a Wednesday):",
+      int(sp.ADMIT_DOW_SF[0]), "vs", int(pdx.admit_dow_pd[0]))
+print("Snowflake = (pandas + 1) % 7 for every row:", bool(((pdx.admit_dow_pd + 1) % 7 == sp.ADMIT_DOW_SF).all()))
+print("first visits:", int(sp.FIRST_VISIT.sum()), "| winter stays:", int(sp.WINTER.sum()),
+      "| creatinine > 1.5:", int(sp.CREAT_HIGH.sum()), "| ICD chapters:", sp.ICD_CHAPTER.nunique())
+```
+
+### 4. Pull to pandas, score with the Day 31 champion, write scores back, payer worklist
+```python
+# Pull ONLY what the model needs to pandas, score it with the Day 31 registered champion, write scores back.
+import mlflow
+from sklearn.metrics import roc_auc_score
+RAW_COLS = ["PATIENT_ID", "ADMIT_DATE", "AGE", "PAYER", "ADMIT_TYPE", "DISCHARGE", "DRG", "ICD10",
+            "LOS_DAYS", "CREATININE", "HEMOGLOBIN", "SODIUM"]
+test_sf = ft.filter(F.col("SPLIT") == "test").select(RAW_COLS + ["READMIT30"])   # filter + select pushed down
+test_pd = test_sf.to_pandas()
+test_pd.columns = test_pd.columns.str.lower()                          # back to the names the pipeline expects
+y_test = test_pd.pop("readmit30")
+print("pulled to pandas:", test_pd.shape, "of", ft.count(), "x", len(ft.columns), "in the feature table")
+
+mlflow.set_tracking_uri("sqlite:///../day31/mlflow.db")               # Day 31 registry, read only
+champ = mlflow.sklearn.load_model("models:/readmit30_pipeline@champion")
+risk = champ.predict_proba(test_pd)[:, 1]
+print(f"Day 31 champion on Snowpark-pulled test rows: AUC {roc_auc_score(y_test, risk):.3f} (Day 31 logged 0.743)")
+ref = raw.iloc[te_idx].assign(ref=lambda d: champ.predict_proba(d.drop(columns="readmit30"))[:, 1])
+chk = test_pd[["patient_id", "admit_date"]].assign(risk=risk).merge(ref, on=["patient_id", "admit_date"])
+print("same risk as scoring the CSV directly:", np.allclose(chk.risk, chk.ref), "for", len(chk), "stays")
+
+fe = champ.named_steps["prep"].named_transformers_["drg_freq"][0]       # the sklearn FrequencyEncoder
+sk_share = pd.Series(fe.freq_[0])
+sf_share = sp[sp.SPLIT == "train"].drop_duplicates("DRG").set_index("DRG").DRG_SHARE
+print("DRG share: Snowpark group_by vs sklearn FrequencyEncoder, max diff",
+      f"{(sf_share - sk_share.reindex(sf_share.index)).abs().max():.1e}, DRGs {len(sk_share)} vs {len(sf_share)}")
+
+scores = test_pd[["patient_id", "admit_date"]].assign(risk=risk)
+scores.columns = scores.columns.str.upper()
+session.create_dataframe(scores).write.save_as_table("READMIT_SCORES", mode="overwrite")
+cut = float(np.quantile(risk, 0.9))                                    # top 10% = care manager follow-up list
+work = (session.table("READMIT_SCORES").join(ft, on=["PATIENT_ID", "ADMIT_DATE"])
+        .with_column("TOP10", F.iff(F.col("RISK") >= cut, 1, 0))
+        .group_by("PAYER").agg(F.count("*").alias("N"), F.avg("RISK").alias("MEAN_RISK"),
+                               F.sum("TOP10").alias("TOP10_N"), F.avg("READMIT30").alias("ACTUAL"))
+        .sort(F.col("MEAN_RISK").desc()))
+print(f"top-10% cut {cut:.3f} | worklist by payer (test stays):")
+for r in work.collect():
+    print(f"  {r.PAYER:10s} N {int(r.N):3d}  mean risk {float(r.MEAN_RISK):.3f}  top10 {int(r.TOP10_N):2d}  actual {float(r.ACTUAL):.3f}")
+```
+
+### 5. Do the new features help? MLflow race, then a stored procedure
+```python
+# Do the new Snowpark history features help? Same GroupKFold race as Day 31, logged to a Day 32 MLflow experiment.
+# Then the same feature build wrapped as a stored procedure (runs inside Snowflake on a real account).
+from sklearn.model_selection import GroupKFold, cross_validate
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.base import clone
+trn = sp[sp.SPLIT == "train"].copy(); trn.columns = trn.columns.str.lower()
+base = clone(champ)                                                     # Day 31 champion recipe, unfitted
+plus = clone(champ)
+plus.steps[0][1].transformers.append(("snowpark_hist", make_pipeline(SimpleImputer(strategy="median"),
+                                      StandardScaler()), ["prior_avg_los", "drg_avg_los"]))
+mlflow.set_tracking_uri("sqlite:///mlflow.db"); mlflow.set_experiment("day32_snowpark")
+res = {}
+for name, model in {"day31_champion": base, "champion+snowpark_hist": plus}.items():
+    cv = cross_validate(model, trn, trn.readmit30, groups=trn.patient_id, cv=GroupKFold(5), scoring="roc_auc")
+    with mlflow.start_run(run_name=name):
+        mlflow.set_tags({"source": "snowpark_local_testing", "table": "READMIT_FEATURES"})
+        mlflow.log_metrics({"cv_auc": cv["test_score"].mean(), "cv_auc_sd": cv["test_score"].std()})
+    res[name] = cv["test_score"]
+    print(f"{name:24s} GroupKFold AUC {cv['test_score'].mean():.3f}  sd {cv['test_score'].std():.3f}")
+
+def build_features(sess: Session, src: str, dst: str) -> str:            # the s2 logic, as one function
+    w = Window.partition_by("PATIENT_ID").order_by("ADMIT_DATE")
+    out = (sess.table(src).with_column("PRIOR_VISITS", F.row_number().over(w) - 1)
+           .with_column("DAYS_SINCE_LAST", F.datediff("day", F.lag("ADMIT_DATE").over(w), F.col("ADMIT_DATE"))))
+    out.write.save_as_table(dst, mode="overwrite")
+    return f"{dst}: {sess.table(dst).count()} rows"
+sp_build = session.sproc.register(build_features, name="BUILD_FEATURES", replace=True,
+                                  packages=["snowflake-snowpark-python"])
+print("stored procedure call:", sp_build("READMIT_RAW", "READMIT_FEATURES_SP"))
+```
+
+### 6. The same features in Snowflake SQL (run in a worksheet)
+```sql
+-- The same features in plain Snowflake SQL (run in a Snowflake worksheet; Session.sql is not available in local testing).
+CREATE OR REPLACE TABLE READMIT_FEATURES_SQL AS
+WITH s AS (
+  SELECT r.*, p.SPLIT FROM READMIT_RAW r JOIN PATIENT_SPLIT p ON r.PATIENT_ID = p.PATIENT_ID
+), drg AS (                                   -- learned from TRAIN rows only
+  SELECT DRG, COUNT(*) AS DRG_N, AVG(LOS_DAYS) AS DRG_AVG_LOS,
+         COUNT(*)::FLOAT / SUM(COUNT(*)) OVER () AS DRG_SHARE      -- ::FLOAT avoids 6-decimal rounding
+  FROM s WHERE SPLIT = 'train' GROUP BY DRG
+)
+SELECT s.*,
+  ROW_NUMBER() OVER (PARTITION BY s.PATIENT_ID ORDER BY s.ADMIT_DATE) - 1 AS PRIOR_VISITS,
+  DATEDIFF('day', LAG(s.ADMIT_DATE) OVER (PARTITION BY s.PATIENT_ID ORDER BY s.ADMIT_DATE), s.ADMIT_DATE) AS DAYS_SINCE_LAST,
+  AVG(s.LOS_DAYS) OVER (PARTITION BY s.PATIENT_ID ORDER BY s.ADMIT_DATE
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS PRIOR_AVG_LOS,
+  DAYOFWEEK(s.ADMIT_DATE) AS ADMIT_DOW_SF,                          -- 0 = Sunday with default WEEK_START
+  IFF(MONTH(s.ADMIT_DATE) IN (12, 1, 2), 1, 0) AS WINTER,
+  SUBSTR(s.ICD10, 1, 1) AS ICD_CHAPTER,
+  COALESCE(drg.DRG_SHARE, 0) AS DRG_SHARE, drg.DRG_AVG_LOS
+FROM s LEFT JOIN drg ON s.DRG = drg.DRG;
+```
+
+### 7. Your real Snowflake account (env vars, not run here)
+```python
+# The same Day 32 code on YOUR Snowflake account (not run on the lesson box: it has no Snowflake credentials).
+# Use it in place of the local Session in snippet 1 (keep the pandas lines that build raw, split and up).
+# Set these in your shell or a local .env that git ignores, never in the code:
+#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD (or use SSO), SNOWFLAKE_ROLE,
+#   SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE, SNOWFLAKE_SCHEMA
+import os
+from snowflake.snowpark import Session
+keys = ["account", "user", "password", "role", "warehouse", "database", "schema"]
+params = {k: os.environ[f"SNOWFLAKE_{k.upper()}"] for k in keys if os.environ.get(f"SNOWFLAKE_{k.upper()}")}
+# params["authenticator"] = "externalbrowser"     # SSO instead of a password, if your company uses it
+session = Session.builder.configs(params).create()
+print(session.sql("SELECT CURRENT_ACCOUNT(), CURRENT_WAREHOUSE(), CURRENT_ROLE()").collect())
+
+# Load once with write_pandas instead of create_dataframe (bulk upload through a stage):
+session.write_pandas(up, "READMIT_RAW", auto_create_table=True, overwrite=True, use_logical_type=True)
+session.write_pandas(split, "PATIENT_SPLIT", auto_create_table=True, overwrite=True)
+stays = session.table("READMIT_RAW")
+# From here, snippets 2 to 5 run unchanged. Extra things a real account can show you:
+print(q.queries["queries"][0])       # the SQL Snowpark generated: proof of pushdown
+q.explain()                          # Snowflake's query plan for it
+session.sql("SELECT COUNT(*) FROM READMIT_FEATURES").collect()     # plain SQL is fine here
+session.close()
+```
+
+### 8. Push to GitHub
+```bash
+cd ~/ds-genai-90-days
+printf 'day32/mlflow.db\nday32/mlruns/\n.env\n' >> .gitignore   # tracking store and credentials stay local
+git add .gitignore day32
+git commit -m "Day 32: Snowpark feature engineering and scoring on the readmission data"
+git push
+```
+
+## Snowpark ML and stored procedures (note)
+A stored procedure ships a Python function into Snowflake so it runs next to the data (we registered and called one in local testing). Snowpark ML (pip install snowflake-ml-python, needs a real account) adds sklearn-style preprocessing and models that train in the warehouse, plus a Snowflake Model Registry. Use them when the data is too big to move or must stay governed (PHI); use to_pandas() when the model-ready frame is small.
+
+## Tomorrow (Day 33)
+Train the readmission model inside Snowflake with Snowpark ML and a stored procedure, and register it in the Snowflake Model Registry, next to the MLflow champion.
+
+## Printables
+- Cheat sheet: `day32_v1_cheat_sheet.png`
+- Infographic: `day32_v2_infographic.png`
+- Code worksheet: `day32_v3_worksheet.png`
+- Practice quiz: `day32_v4_quiz.png`
+- PDF: `day32_lesson.pdf`
+
+## Podcast script
+(Audio: `day32_podcast.mp3`)
+
+Hey Todor, welcome to day thirty two. Over the last three days we built a scikit-learn pipeline for thirty day readmission and tracked it in MLflow. Today we move the feature work to where healthcare data usually lives: in Snowflake. The tool is Snowpark for Python.
+
+Why does this matter for a job? A lot of healthcare analytics postings list Snowflake next to Python and SQL. Claims and encounter tables can have hundreds of millions of rows, and they often hold protected health information, so you do not want to download them to a laptop. Snowpark lets you write pandas-style Python that Snowflake turns into SQL and runs inside the warehouse. That is called pushdown. Only the results come back.
+
+The second big idea is lazy evaluation. When you write filter, join, or with column, nothing runs. Snowpark just builds a plan. Work happens only at an action, like collect, count, show, to pandas, or save as table. We proved it two ways. Defining a filter and group by took about twenty milliseconds and touched no rows. And when we made a typo in a column name, there was no error at all until we called collect.
+
+We had no Snowflake account on the lesson computer, so we used Snowpark local testing mode. It is an in-memory emulator that runs the same DataFrame code. It is great for practice and unit tests, but it has honest limits. It cannot run plain SQL, it cannot show you the generated SQL or a query plan, and a few functions, like month, day of week, and round, are not implemented. We used date part and the natural log instead. The lesson also includes the same code for your real account, with connection settings read from environment variables, never typed into the code.
+
+Here is what we built on the same two thousand six hundred fifty five simulated stays. With window functions partitioned by patient and ordered by admit date, we made prior visits, days since the last stay, and the average length of stay over earlier stays only. Then we grouped by DRG on the training rows only, and joined those stats back to every row. Training rows only matters, because learning a statistic from test rows is leakage.
+
+Next we rebuilt the same features in pandas and compared every row. The window features matched exactly. Two gotchas showed up, and both are worth knowing in an interview. First, dividing two Snowflake numbers keeps six decimal places, so our first DRG share was off by about five in ten million. Casting to double before dividing fixed it. Second, the weekday codes never matched. Snowflake counts Sunday as zero, pandas counts Monday as zero. Check that before you join to another system.
+
+Then we pulled only what the model needs, six hundred fifty eight test stays and twelve columns, into pandas, and scored them with the Day 31 champion from the MLflow registry. The test AUC was point seven four three, the same as Day 31, and the risks were identical to scoring the CSV directly. We wrote the scores back as a table and built a small care manager worklist by payer. Medicaid had the highest mean predicted risk, about point two two. The top ten percent cut was a risk of point three eight one.
+
+We also asked an honest question: do the new history features help? With GroupKFold, the champion scored point seven two four and the version with two extra Snowpark features scored point seven two two, with a fold spread of about point zero three. No gain, so we keep the simpler model. Moving features into Snowflake is about scale and governance, not a magic accuracy boost.
+
+Last, we wrapped the feature build in a stored procedure and called it. On a real account, that code runs inside Snowflake. Snowpark ML takes this further, with scikit-learn style preprocessing, model training, and a model registry inside Snowflake.
+
+All the data is simulated for teaching. Your exercise is in the day thirty two folder of your repo, and remember to keep the MLflow files and any credentials file out of git. Tomorrow, on day thirty three, we train the readmission model inside Snowflake with Snowpark ML and a stored procedure, and register it in the Snowflake model registry. See you then.

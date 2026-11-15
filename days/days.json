@@ -485,6 +485,23 @@
     "scikit-learn",
     "Snowpark"
    ]
+  },
+  {
+   "day": 32,
+   "folder": "day32",
+   "title": "Snowpark for Python: readmission features in Snowflake, lazy evaluation and pushdown, scored with the Day 31 pipeline",
+   "tags": [
+    "Snowpark",
+    "Snowflake",
+    "Lazy evaluation",
+    "SQL pushdown",
+    "Window functions",
+    "Feature engineering",
+    "Local testing",
+    "Stored procedures",
+    "MLflow",
+    "Readmission"
+   ]
   }
  ]
 }
