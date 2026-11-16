@@ -502,6 +502,23 @@
     "MLflow",
     "Readmission"
    ]
+  },
+  {
+   "day": 33,
+   "folder": "day33",
+   "title": "Snowpark ML: sklearn-style preprocessing, training and the Snowflake Model Registry on 30-day readmission",
+   "tags": [
+    "Snowpark ML",
+    "snowflake-ml-python",
+    "Snowflake",
+    "Model Registry",
+    "Preprocessing",
+    "XGBoost",
+    "GroupKFold",
+    "MLflow",
+    "UDF",
+    "Readmission"
+   ]
   }
  ]
 }
