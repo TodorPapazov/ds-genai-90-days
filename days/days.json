@@ -519,6 +519,25 @@
     "UDF",
     "Readmission"
    ]
+  },
+  {
+   "day": 34,
+   "folder": "day34",
+   "title": "Model drift and calibration: PSI, KS, reliability diagrams, Brier and recalibration on 30-day readmission",
+   "tags": [
+    "Model drift",
+    "Data drift",
+    "Concept drift",
+    "PSI",
+    "KS test",
+    "Calibration",
+    "Reliability diagram",
+    "Brier score",
+    "CalibratedClassifierCV",
+    "Monitoring",
+    "MLflow",
+    "Readmission"
+   ]
   }
  ]
 }
