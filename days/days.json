@@ -538,6 +538,25 @@
     "MLflow",
     "Readmission"
    ]
+  },
+  {
+   "day": 35,
+   "folder": "day35",
+   "title": "Week 5 recap: one end-to-end workflow from pipeline to MLflow, registry, Snowpark scoring and drift/calibration monitoring on 30-day readmission",
+   "tags": [
+    "Week 5 recap",
+    "Pipeline",
+    "Custom transformers",
+    "MLflow",
+    "Model registry",
+    "Model signature",
+    "Snowpark",
+    "Local testing",
+    "PSI",
+    "Calibration",
+    "Platt scaling",
+    "Readmission"
+   ]
   }
  ]
 }
