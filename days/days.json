@@ -557,6 +557,22 @@
     "Platt scaling",
     "Readmission"
    ]
+  },
+  {
+   "day": 36,
+   "folder": "day36",
+   "title": "Snowpark and Snowpark ML on your real Snowflake trial: query plans, warehouse training and the Model Registry",
+   "tags": [
+    "Snowpark",
+    "Snowpark ML",
+    "Snowflake",
+    "Query plan",
+    "Model Registry",
+    "VS Code",
+    "Snowsight",
+    "Readmission",
+    "Trial account"
+   ]
   }
  ]
 }

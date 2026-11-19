@@ -1,0 +1,16 @@
+# Copy to ~/.snowflake/connections.toml (or a local connections.toml that git ignores).
+# Fill in account, user, and password from your vault. Never commit the filled file.
+# The VS Code Snowflake extension and Snowpark both read this file.
+
+[ds90]
+account = "<your-account-identifier>"
+user = "<your-username>"
+password = "<from-your-vault>"
+warehouse = "DS90_XS"
+database = "DS90"
+schema = "DAY36"
+role = "ACCOUNTADMIN"
+
+# Optional default, in ~/.snowflake/config.toml:
+# [options]
+# default_connection_name = "ds90"
