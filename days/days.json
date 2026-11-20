@@ -395,6 +395,20 @@
    ]
   },
   {
+   "day": 25,
+   "folder": "day25",
+   "title": "Skewed targets: log-transforming length of stay, TransformedTargetRegressor, and back-transforming predictions (smearing) to days",
+   "tags": [
+    "Skewed targets",
+    "log transform",
+    "TransformedTargetRegressor",
+    "Smearing",
+    "Length of stay",
+    "scikit-learn",
+    "Snowflake SQL"
+   ]
+  },
+  {
    "day": 26,
    "folder": "day26",
    "title": "Learning and validation curves: diagnosing under and overfitting on length of stay",
