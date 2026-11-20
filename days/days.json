@@ -587,6 +587,25 @@
     "Readmission",
     "Trial account"
    ]
+  },
+  {
+   "day": 37,
+   "folder": "day37",
+   "title": "Snowflake Cortex LLM functions in SQL: summarize, classify, extract and score simulated discharge notes",
+   "tags": [
+    "Snowflake Cortex",
+    "LLM functions",
+    "SQL",
+    "AI_COMPLETE",
+    "AI_CLASSIFY",
+    "AI_SENTIMENT",
+    "AI_EXTRACT",
+    "Summarize",
+    "Token costs",
+    "Discharge notes",
+    "Readmission",
+    "Trial account"
+   ]
   }
  ]
 }
