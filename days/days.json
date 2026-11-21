@@ -606,6 +606,25 @@
     "Readmission",
     "Trial account"
    ]
+  },
+  {
+   "day": 38,
+   "folder": "day38",
+   "title": "Snowflake Cortex Search over simulated clinical documents: chunking, filters, grounded answers and a first look at RAG",
+   "tags": [
+    "Snowflake Cortex",
+    "Cortex Search",
+    "RAG",
+    "Chunking",
+    "Embeddings",
+    "Hybrid search",
+    "SEARCH_PREVIEW",
+    "COMPLETE",
+    "Hit rate@k",
+    "MRR",
+    "BM25",
+    "Trial account"
+   ]
   }
  ]
 }

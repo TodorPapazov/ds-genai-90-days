@@ -1,0 +1,50 @@
+chunks: 102 from 33 simulated documents | labeled questions: 47 (23 keyword, 24 paraphrase, 4 with a filter) + 3 unanswerable for the RAG test
+
+== chunk retrieval, filters applied where the question has one
+  TF-IDF (words)     hit@1 0.702  hit@3 0.894  hit@5 0.894  hit@10 0.915  mrr 0.794
+  BM25               hit@1 0.723  hit@3 0.894  hit@5 0.894  hit@10 0.915  mrr 0.801
+  TF-IDF (char 3-5)  hit@1 0.851  hit@3 0.915  hit@5 0.936  hit@10 0.936  mrr 0.885
+
+== by question type (BM25 and TF-IDF words, hit@3 / MRR)
+  TF-IDF (words)  keyword    hit@3 1.000  MRR 0.913
+  TF-IDF (words)  paraphrase hit@3 0.792  MRR 0.681
+  BM25            keyword    hit@3 1.000  MRR 0.906
+  BM25            paraphrase hit@3 0.792  MRR 0.700
+
+== the 4 filtered questions, BM25 with and without the attribute filter
+  filter OFF  hit@1 0.750  hit@3 0.750  MRR 0.750
+  filter ON   hit@1 0.750  hit@3 1.000  MRR 0.875
+  Q26 gold DOC013-C3 | no filter top2 ['DOC001-C2', 'DOC027-C2'] | {"@eq": {"DEPARTMENT": "Orthopedics"}} top2 ['DOC013-C2', 'DOC013-C3']
+  Q33 gold DOC020-C1 | no filter top2 ['DOC020-C1', 'DOC019-C1'] | {"@gte": {"EFFECTIVE_DATE": "2026-01-01"}} top2 ['DOC020-C1', 'DOC021-C1']
+  Q42 gold DOC027-C1 | no filter top2 ['DOC027-C1', 'DOC029-C1'] | {"@eq": {"DOC_TYPE": "patient_education"}} top2 ['DOC027-C1', 'DOC029-C1']
+  Q45 gold DOC030-C1 | no filter top2 ['DOC030-C1', 'DOC001-C1'] | {"@eq": {"DEPARTMENT": "General Surgery"}} top2 ['DOC030-C1', 'DOC030-C2']
+
+== chunks vs whole documents (BM25, find the right DOCUMENT, k = 3)
+  whole docs : right doc in top 3 0.894, context sent to the LLM at k=3 about 1247 chars
+  chunks     : right doc in top 3 0.894, context at k=3 about 476 chars (and the exact passage, not the whole document)
+
+== misses: gold chunk not in BM25 top 3
+  Q 9 [paraphrase] Do I have to stop eating spinach and salad greens on my anticoagulant? -> got DOC022-C1
+  Q11 [paraphrase] When is the final dose of the injectable bridge medicine given before  -> got DOC013-C4
+  Q12 [paraphrase] How long do I take the steroid pills after my lung flare-up? -> got DOC008-C2
+  Q46 [paraphrase] How much bleeding after giving birth is too much? -> got DOC010-C2
+  Q47 [paraphrase] Can a relative translate for the doctor if they speak both languages? -> got DOC006-C1
+
+== sample grounded prompt for Q29 (BM25 top 3; gold DOC016-C1 found)
+You answer questions using ONLY the context. Cite the chunk ids you used in square brackets. If the context does not contain the answer, reply exactly: Not found in the documents.
+
+Context:
+[DOC016-C1] Diabetes Discharge Instructions. For low blood sugar under 70 mg/dL, use the rule of 15: take 15 grams of fast sugar such as 4 ounces of juice, then recheck in 15 minutes.
+[DOC016-C2] Diabetes Discharge Instructions. Check your blood sugar before each meal and at bedtime. Write the numbers in your log and bring it to clinic.
+[DOC016-C3] Diabetes Discharge Instructions. On sick days, keep taking your long-acting (basal) insulin even if you are not eating. Check your sugar every 4 hours.
+
+Question: My blood sugar dropped to 62, how many grams of sugar should I eat and when do I check again?
+Answer:
+
+== size and cost estimate (rates NOT copied: see the Snowflake Service Consumption Table)
+  embedding tokens to build the index: about 4,050 (chars / 4) = 0.0040 million
+  indexed data: 102 rows x (768 dims x 4 bytes + about 247 bytes of columns) = 0.339 MB = 0.000339 GB
+  serving credits per month = 0.000339 GB x (credits per GB-month). With the docs example rate of 6.3: 0.0021 credits/month
+  warehouse: X-Small uses 1 credit per hour while running, billed per second, 60 second minimum per resume
+  grounded prompt above: about 201 input tokens per question for COMPLETE
+wrote baseline_card.json
