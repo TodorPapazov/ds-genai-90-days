@@ -1,0 +1,56 @@
+Tables: ENCOUNTERS 2,325  PATIENTS 1,000  DRG_GROUPS 100  overall readmission rate 0.185
+
+1) YAML: 3 tables, 25 dimensions/time dims/facts/metrics/filters, 2 relationships, 5 verified queries, 39 synonyms. Problems: 0
+
+2) Gold SQL (DuckDB) vs pandas reference answers
+   Q01  MATCH  rows= 1  first row: READMISSION_RATE=0.185
+   Q02  MATCH  rows= 4  first row: PAYER=Medicaid, READMISSION_RATE=0.211
+   Q03  MATCH  rows= 1  first row: SERVICE_LINE=Cardiology, READMISSION_RATE=0.248
+   Q04  MATCH  rows= 1  first row: ENCOUNTERS=1117
+   Q05  MATCH  rows=12  first row: MONTH=2025-01-01 00:00:00, READMISSION_RATE=0.221
+   Q06  MATCH  rows= 5  first row: DRG_CODE=291, DRG_DESCRIPTION=Heart failure and shock with MCC, ENCOUNTERS=505
+   Q07  MATCH  rows= 4  first row: DISCHARGE_DISPOSITION=Home, AVG_LOS=3.96
+   Q08  MATCH  rows= 1  first row: READMISSION_RATE=0.251
+   Q09  MATCH  rows= 1  first row: PATIENTS=382
+   Q10  MATCH  rows= 9  first row: HOME_COUNTY=Johnson, READMISSION_RATE=0.197
+   Q11  MATCH  rows= 1  first row: READMISSION_RATE=0.178
+   Q12  MATCH  rows= 3  first row: AGE_GROUP=65-79, READMISSION_RATE=0.177
+   Q13  MATCH  rows= 2  first row: DISCHARGE_DISPOSITION=SNF, READMISSION_RATE=0.233
+   Q14  no gold SQL: the right behavior is no SQL (out of scope)
+   Q15  no gold SQL: the right behavior is no SQL (ambiguous)
+
+3) Verified queries (logical names, __table) on DuckDB views built from the YAML
+   overall_readmission_rate   vs gold Q01: match   guard: ok
+   readmission_rate_by_payer  vs gold Q02: match (+1 extra column)   guard: ok
+   monthly_rate_2025          vs gold Q05: match (+1 extra column)   guard: ok
+   top_drgs_by_volume         vs gold Q06: match   guard: ok
+   rate_excluding_ama         vs gold Q11: match   guard: ok
+
+4) Comparator on hand-written candidate SQL (typical text-to-SQL mistakes, written by the lesson author, NOT Cortex output)
+   Q02 correct, other names and order         -> MATCH: match (+1 extra column)
+   Q01 correct, no ROUND                      -> MATCH: match
+   Q04 correct, YEAR() instead of a range     -> MATCH: match
+   Q04 uses admit date, not discharge date    -> WRONG: ENCOUNTERS: got 1109.000, gold 1117.000
+   Q05 monthly rate by admit month            -> WRONG: no generated column matches gold column READMISSION_RATE
+   Q09 counts encounters of those patients    -> WRONG: PATIENTS: got 1336.000, gold 382.000
+   Q11 forgets the AMA filter                 -> WRONG: READMISSION_RATE: got 0.185, gold 0.178
+   Q12 age band off by one (<= 65)            -> WRONG: no generated column matches gold column READMISSION_RATE
+   Q08 exact text match on the DRG name       -> WRONG: READMISSION_RATE: got NULL, gold 0.251
+   Q03 correct, CTE plus extra column         -> MATCH: match (+1 extra column)
+
+5) guard_sql on risky SQL
+   ALLOW  ok                                 SELECT * FROM ENCOUNTERS LIMIT 10
+   BLOCK  not a SELECT                       DELETE FROM ENCOUNTERS
+   BLOCK  more than one statement            SELECT 1; DROP TABLE PATIENTS
+   BLOCK  table not allowed: SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY SELECT * FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
+   ALLOW  ok                                 WITH x AS (SELECT * FROM PATIENTS) SELECT COUNT(*) FROM x
+   ALLOW  ok                                 WITH __encounters AS (SELECT payer, readmit_30d FROM ds90.da
+   ALLOW  ok                                 -- note SELECT PAYER FROM ENCOUNTERS
+
+6) Warehouse seconds for 15 questions asked 2 minutes apart, each query about 2 s (X-Small = 1 credit/hour)
+   AUTO_SUSPEND= 60s: 15 resume(s),   930 billed seconds = 0.258 credits
+   AUTO_SUSPEND=300s:  1 resume(s),  1982 billed seconds = 0.551 credits
+   AUTO_SUSPEND=600s:  1 resume(s),  2282 billed seconds = 0.634 credits
+
+Cortex Analyst itself is billed per successful message (HTTP 200), not per token: 15 questions = 15 messages,
+plus one per follow-up turn. Rate: Snowflake Service Consumption Table. Wrote baseline_card.json

@@ -1,0 +1,16 @@
+QID,QUESTION,TYPE,IN_VQR,ORDER_MATTERS,GOLD_SQL
+Q01,What is the overall 30-day readmission rate?,basic,yes,False,"SELECT ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS"
+Q02,What is the readmission rate by payer?,group by,yes,False,"SELECT PAYER, ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS GROUP BY PAYER"
+Q03,Which service line has the highest readmission rate?,join + top 1,no,True,"SELECT G.SERVICE_LINE, ROUND(AVG(E.READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS E JOIN DRG_GROUPS G ON E.DRG_CODE = G.DRG_CODE GROUP BY G.SERVICE_LINE ORDER BY READMISSION_RATE DESC LIMIT 1"
+Q04,How many encounters were discharged in 2025?,time filter,no,False,SELECT COUNT(*) AS ENCOUNTERS FROM ENCOUNTERS WHERE DISCHARGE_DATE >= '2025-01-01' AND DISCHARGE_DATE < '2026-01-01'
+Q05,Show the monthly readmission rate for discharges in 2025.,time series,yes,True,"SELECT DATE_TRUNC('month', DISCHARGE_DATE) AS MONTH, ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS WHERE DISCHARGE_DATE >= '2025-01-01' AND DISCHARGE_DATE < '2026-01-01' GROUP BY 1 ORDER BY 1"
+Q06,What are the top 5 DRGs by number of encounters?,join + top k,yes,True,"SELECT E.DRG_CODE, G.DRG_DESCRIPTION, COUNT(*) AS ENCOUNTERS FROM ENCOUNTERS E JOIN DRG_GROUPS G ON E.DRG_CODE = G.DRG_CODE GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 5"
+Q07,What is the average length of stay by discharge disposition?,group by,no,False,"SELECT DISCHARGE_DISPOSITION, ROUND(AVG(LOS_DAYS), 2) AS AVG_LOS FROM ENCOUNTERS GROUP BY 1"
+Q08,What is the readmission rate for Medicare heart failure stays?,synonym + filter,no,False,"SELECT ROUND(AVG(E.READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS E JOIN DRG_GROUPS G ON E.DRG_CODE = G.DRG_CODE WHERE E.PAYER = 'Medicare' AND G.DRG_DESCRIPTION ILIKE '%heart failure%'"
+Q09,How many patients had 3 or more encounters?,nested aggregate,no,False,SELECT COUNT(*) AS PATIENTS FROM (SELECT PATIENT_ID FROM ENCOUNTERS GROUP BY PATIENT_ID HAVING COUNT(*) >= 3)
+Q10,What is the readmission rate by home county?,join patients,no,False,"SELECT P.HOME_COUNTY, ROUND(AVG(E.READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS E JOIN PATIENTS P ON E.PATIENT_ID = P.PATIENT_ID GROUP BY 1"
+Q11,What is the readmission rate excluding AMA discharges?,named filter,yes,False,"SELECT ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS WHERE DISCHARGE_DISPOSITION <> 'AMA'"
+Q12,What is the readmission rate by age group?,derived dimension,no,False,"SELECT CASE WHEN AGE_AT_ADMIT < 65 THEN 'Under 65' WHEN AGE_AT_ADMIT < 80 THEN '65-79' ELSE '80+' END AS AGE_GROUP, ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS GROUP BY 1"
+Q13,Compare the readmission rate for SNF and Home health discharges.,filter IN,no,False,"SELECT DISCHARGE_DISPOSITION, ROUND(AVG(READMIT_30D), 3) AS READMISSION_RATE FROM ENCOUNTERS WHERE DISCHARGE_DISPOSITION IN ('SNF', 'Home health') GROUP BY 1"
+Q14,Which patients will be readmitted next week?,out of scope,no,False,
+Q15,Which unit is the worst?,ambiguous,no,False,

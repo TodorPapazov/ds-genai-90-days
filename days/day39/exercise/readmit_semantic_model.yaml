@@ -1,0 +1,233 @@
+# Day 39 semantic model for Cortex Analyst over SIMULATED 30-day readmission tables (DS90.DAY39).
+# One YAML, two uses: (1) upload to stage @DS90.DAY39.SEMANTIC_MODELS and send "semantic_model_file",
+# or (2) create a semantic view with SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML (recommended by Snowflake).
+# Format: YAML specification for semantic views (docs checked Nov 22, 2026). No credentials in this file.
+name: READMIT_ANALYST
+description: >-
+  Simulated inpatient encounters from 2024 and 2025 with a 30-day readmission flag, the patient's home county,
+  and the DRG service line. Practice data for learning text-to-SQL. Not real patients.
+
+tables:
+  - name: encounters
+    synonyms: ["stays", "admissions", "discharges", "hospitalizations", "visits"]
+    description: One row per inpatient stay. The grain is one encounter.
+    base_table:
+      database: DS90
+      schema: DAY39
+      table: ENCOUNTERS
+    primary_key:
+      columns: [encounter_id]
+    dimensions:
+      - name: encounter_id
+        description: Unique id of the stay.
+        expr: ENCOUNTER_ID
+        data_type: VARCHAR
+      - name: patient_id
+        description: Id of the patient. One patient can have many encounters.
+        expr: PATIENT_ID
+        data_type: NUMBER
+      - name: payer
+        synonyms: ["insurance", "insurer", "coverage", "payor"]
+        description: Primary payer for the stay.
+        expr: PAYER
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Medicare", "Commercial", "Medicaid", "Self-pay"]
+      - name: admit_type
+        synonyms: ["admission type"]
+        description: How the patient was admitted.
+        expr: ADMIT_TYPE
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Emergency", "Urgent", "Elective"]
+      - name: discharge_disposition
+        synonyms: ["discharged to", "discharge destination", "disposition"]
+        description: Where the patient went at discharge. SNF means skilled nursing facility. AMA means left against medical advice.
+        expr: DISCHARGE_DISPOSITION
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Home", "Home health", "SNF", "AMA"]
+      - name: drg_code
+        synonyms: ["DRG"]
+        description: Three-character DRG code of the stay. Join key to drg_groups.
+        expr: DRG_CODE
+        data_type: VARCHAR
+        sample_values: ["291", "871", "470"]
+      - name: age_group
+        synonyms: ["age band", "age bracket"]
+        description: Age at admission in three bands.
+        expr: CASE WHEN AGE_AT_ADMIT < 65 THEN 'Under 65' WHEN AGE_AT_ADMIT < 80 THEN '65-79' ELSE '80+' END
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Under 65", "65-79", "80+"]
+    time_dimensions:
+      - name: discharge_date
+        synonyms: ["discharge day", "date of discharge"]
+        description: Date the stay ended. Use this date for readmission rates and for 'discharged in' questions.
+        expr: DISCHARGE_DATE
+        data_type: DATE
+      - name: admit_date
+        synonyms: ["admission date"]
+        description: Date the stay started. Use only when the user asks about admissions by date.
+        expr: ADMIT_DATE
+        data_type: DATE
+    facts:
+      - name: los_days
+        synonyms: ["length of stay", "LOS"]
+        description: Length of stay in days.
+        expr: LOS_DAYS
+        data_type: NUMBER
+      - name: age_at_admit
+        synonyms: ["age"]
+        description: Patient age in years at admission.
+        expr: AGE_AT_ADMIT
+        data_type: NUMBER
+      - name: readmit_30d
+        synonyms: ["readmitted", "readmission flag", "30-day readmission"]
+        description: 1 if the patient was readmitted within 30 days after this discharge, else 0.
+        expr: READMIT_30D
+        data_type: NUMBER
+    metrics:
+      - name: encounter_count
+        synonyms: ["number of stays", "volume", "discharges count"]
+        description: Number of encounters.
+        expr: COUNT(encounters.encounter_id)
+      - name: readmission_count
+        synonyms: ["readmissions"]
+        description: Number of encounters followed by a readmission within 30 days.
+        expr: SUM(encounters.readmit_30d)
+      - name: readmission_rate
+        synonyms: ["readmit rate", "30-day readmission rate"]
+        description: Share of encounters followed by a 30-day readmission, a number from 0 to 1.
+        expr: AVG(encounters.readmit_30d)
+      - name: avg_los
+        synonyms: ["average length of stay", "ALOS"]
+        description: Average length of stay in days.
+        expr: AVG(encounters.los_days)
+      - name: patient_count
+        synonyms: ["unique patients", "distinct patients"]
+        description: Number of distinct patients.
+        expr: COUNT(DISTINCT encounters.patient_id)
+    filters:
+      - name: exclude_ama
+        synonyms: ["without AMA", "excluding against medical advice"]
+        description: Leave out stays where the patient left against medical advice.
+        expr: DISCHARGE_DISPOSITION <> 'AMA'
+
+  - name: patients
+    synonyms: ["members", "people"]
+    description: One row per patient. Simulated sex and home county in central Indiana.
+    base_table:
+      database: DS90
+      schema: DAY39
+      table: PATIENTS
+    primary_key:
+      columns: [patient_id]
+    dimensions:
+      - name: patient_id
+        description: Id of the patient.
+        expr: PATIENT_ID
+        data_type: NUMBER
+      - name: sex
+        description: Recorded sex, F or M.
+        expr: SEX
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["F", "M"]
+      - name: home_county
+        synonyms: ["county", "county of residence", "where the patient lives"]
+        description: Home county of the patient (simulated, central Indiana).
+        expr: HOME_COUNTY
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Marion", "Hamilton", "Hendricks", "Johnson", "Boone", "Hancock", "Madison", "Morgan", "Shelby"]
+    time_dimensions:
+      - name: first_admit_date
+        description: Date of the patient's first stay in this data.
+        expr: FIRST_ADMIT_DATE
+        data_type: DATE
+
+  - name: drg_groups
+    synonyms: ["DRG lookup", "diagnosis groups"]
+    description: One row per DRG code with a short description and the service line.
+    base_table:
+      database: DS90
+      schema: DAY39
+      table: DRG_GROUPS
+    primary_key:
+      columns: [drg_code]
+    dimensions:
+      - name: drg_code
+        description: Three-character DRG code.
+        expr: DRG_CODE
+        data_type: VARCHAR
+      - name: drg_description
+        synonyms: ["diagnosis", "condition", "DRG name"]
+        description: Short DRG description, for example Heart failure and shock with MCC.
+        expr: DRG_DESCRIPTION
+        data_type: VARCHAR
+        sample_values: ["Heart failure and shock with MCC", "Septicemia or severe sepsis with MCC", "COPD with MCC"]
+      - name: service_line
+        synonyms: ["department", "specialty", "clinical service"]
+        description: Clinical service line that owns the DRG.
+        expr: SERVICE_LINE
+        data_type: VARCHAR
+        is_enum: true
+        sample_values: ["Cardiology", "Pulmonary", "Gastroenterology", "Nephrology", "Infectious disease",
+                        "Endocrinology", "Orthopedics", "Behavioral health", "General medicine"]
+
+relationships:
+  - name: encounters_to_patients
+    left_table: encounters
+    right_table: patients
+    relationship_columns:
+      - left_column: patient_id
+        right_column: patient_id
+  - name: encounters_to_drg_groups
+    left_table: encounters
+    right_table: drg_groups
+    relationship_columns:
+      - left_column: drg_code
+        right_column: drg_code
+
+module_custom_instructions:
+  sql_generation: >-
+    Readmission rate means AVG(readmit_30d) over encounters, rounded to 3 decimals. Use discharge_date for
+    time filters on readmission questions. Count patients with COUNT(DISTINCT patient_id), never COUNT(*).
+    Return aggregates, not lists of individual patients, and add LIMIT 100 to any row-level result.
+  question_categorization: >-
+    The data is simulated and historical (2024 and 2025). If the user asks to predict future readmissions,
+    asks for clinical advice, or asks about data that is not in these tables, say it cannot be answered with this data.
+
+verified_queries:
+  # Checked by the lesson author on a local DuckDB copy of the simulated data (local_eval.py), NOT yet on Snowflake.
+  # After you run each one on your trial and the answer matches, add  verified_by: <your name>  and  verified_at: <unix time>.
+  - name: overall_readmission_rate
+    question: What is the overall 30-day readmission rate?
+    use_as_onboarding_question: true
+    sql: SELECT ROUND(AVG(readmit_30d), 3) AS readmission_rate FROM __encounters
+  - name: readmission_rate_by_payer
+    question: What is the readmission rate by payer?
+    use_as_onboarding_question: true
+    sql: >-
+      SELECT payer, COUNT(encounter_id) AS encounters, ROUND(AVG(readmit_30d), 3) AS readmission_rate
+      FROM __encounters GROUP BY payer ORDER BY readmission_rate DESC
+  - name: monthly_rate_2025
+    question: Show the monthly readmission rate for discharges in 2025.
+    sql: >-
+      SELECT DATE_TRUNC('month', discharge_date) AS discharge_month, COUNT(encounter_id) AS encounters,
+      ROUND(AVG(readmit_30d), 3) AS readmission_rate FROM __encounters
+      WHERE discharge_date >= '2025-01-01' AND discharge_date < '2026-01-01'
+      GROUP BY discharge_month ORDER BY discharge_month
+  - name: top_drgs_by_volume
+    question: What are the top 5 DRGs by number of encounters?
+    use_as_onboarding_question: true
+    sql: >-
+      SELECT e.drg_code, d.drg_description, COUNT(e.encounter_id) AS encounters
+      FROM __encounters AS e JOIN __drg_groups AS d ON e.drg_code = d.drg_code
+      GROUP BY e.drg_code, d.drg_description ORDER BY encounters DESC LIMIT 5
+  - name: rate_excluding_ama
+    question: What is the readmission rate excluding AMA discharges?
+    sql: >-
+      SELECT ROUND(AVG(readmit_30d), 3) AS readmission_rate FROM __encounters
+      WHERE discharge_disposition <> 'AMA'

@@ -625,6 +625,25 @@
     "BM25",
     "Trial account"
    ]
+  },
+  {
+   "day": 39,
+   "folder": "day39",
+   "title": "Snowflake Cortex Analyst: text-to-SQL with a semantic model over simulated readmission tables, evaluated against gold SQL",
+   "tags": [
+    "Snowflake Cortex",
+    "Cortex Analyst",
+    "Text-to-SQL",
+    "Semantic model",
+    "Semantic view",
+    "YAML",
+    "Verified queries",
+    "REST API",
+    "Streamlit in Snowflake",
+    "SQL evaluation",
+    "Guardrails",
+    "Trial account"
+   ]
   }
  ]
 }
