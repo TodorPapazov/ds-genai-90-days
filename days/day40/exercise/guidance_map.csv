@@ -1,0 +1,10 @@
+SERVICE_LINE,DOC_ID,TITLE
+Cardiology,DOC001,Heart Failure Discharge Instructions
+Pulmonary,DOC006,COPD Exacerbation Discharge Instructions
+Nephrology,DOC027,Kidney-Friendly Eating (CKD Diet Education)
+Infectious disease,DOC009,Community-Acquired Pneumonia Care Protocol
+Gastroenterology,DOC023,Post-Discharge Follow-up Call Protocol
+General medicine,DOC023,Post-Discharge Follow-up Call Protocol
+Endocrinology,DOC016,Diabetes Discharge Instructions
+Orthopedics,DOC013,Total Hip Replacement Discharge Instructions
+Behavioral health,DOC023,Post-Discharge Follow-up Call Protocol

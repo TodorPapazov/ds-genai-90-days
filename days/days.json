@@ -644,6 +644,26 @@
     "Guardrails",
     "Trial account"
    ]
+  },
+  {
+   "day": 40,
+   "folder": "day40",
+   "title": "Snowflake week mini project: a guided Cortex Code (CoCo) session, a follow-up worklist from score + notes, and a cost and credit check",
+   "tags": [
+    "Snowflake Cortex",
+    "Cortex Code",
+    "CoCo",
+    "AI coding agent",
+    "AI_COMPLETE",
+    "Structured output",
+    "Semantic view",
+    "Worklist",
+    "Evaluation",
+    "Cost check",
+    "ACCOUNT_USAGE",
+    "Resource monitor",
+    "Trial account"
+   ]
   }
  ]
 }

@@ -1,0 +1,23 @@
+Rule reader, all 300 notes: lives_alone acc 0.913, followup acc 0.797
+Rule reader, 60 shortlisted: lives_alone acc 0.833, followup acc 0.683
+Rule misses: 82 notes. Examples:
+    Lives with a roommate who checks on her daily. Discharged home on 8 active medications. The infectious disease clinic office will call to set up a vis
+    Lives with daughter, who will help with medications. Discharged to a skilled nursing facility on 5 active medications. Has an appointment with nephrol
+    Lives with family. Discharged home on 8 active medications. Has an appointment with the heart failure clinic on Nov 24. SIMULATED NOTE.
+
+Readmissions caught (simulated outcome):
+  base rate (all 300)                   79 of 300  precision 0.263
+  score only, top 25                    16 of  25  precision 0.640
+  score + rule fields, top 25           18 of  25  precision 0.720
+  score + answer-key fields, top 25     21 of  25  precision 0.840
+Rule worklist: 5 patients pulled up from score ranks 26-60, 18 with no follow-up booked, 8 living alone
+Readmissions inside the 60-patient shortlist: 33
+AUC on all 300: score 0.718, score + answer-key note fields 0.798
+
+Token estimate (chars/4, plus ~45 tokens of schema per call): 60 notes ~9,762 in + 900 out; all 300 ~48,322 in + 4500 out
+Warehouse, simulated 72-minute session, 30 statements, X-Small (1 credit/hour):
+  AUTO_SUSPEND  60: 1,731 billed seconds = 0.481 credits, 18 resumes
+  AUTO_SUSPEND 300: 4,307 billed seconds = 1.196 credits, 8 resumes
+  AUTO_SUSPEND 600: 4,944 billed seconds = 1.373 credits, 1 resumes
+
+wrote baseline_card.json

@@ -1,0 +1,101 @@
+DRG_CODE,DRG_DESCRIPTION,SERVICE_LINE
+010,Other DRG 010 (simulated),Pulmonary
+016,Other DRG 016 (simulated),Behavioral health
+048,Other DRG 048 (simulated),Nephrology
+052,Other DRG 052 (simulated),Behavioral health
+065,Other DRG 065 (simulated),Gastroenterology
+066,Other DRG 066 (simulated),Nephrology
+071,Other DRG 071 (simulated),General medicine
+090,Other DRG 090 (simulated),Cardiology
+095,Other DRG 095 (simulated),Endocrinology
+096,Other DRG 096 (simulated),Orthopedics
+111,Other DRG 111 (simulated),Nephrology
+116,Other DRG 116 (simulated),General medicine
+117,Other DRG 117 (simulated),Cardiology
+118,Other DRG 118 (simulated),Pulmonary
+122,Other DRG 122 (simulated),Endocrinology
+124,Other DRG 124 (simulated),Behavioral health
+130,Other DRG 130 (simulated),Infectious disease
+132,Other DRG 132 (simulated),Orthopedics
+182,Other DRG 182 (simulated),Gastroenterology
+190,COPD with MCC,Pulmonary
+193,Simple pneumonia and pleurisy with MCC,Pulmonary
+201,Other DRG 201 (simulated),Nephrology
+212,Other DRG 212 (simulated),Endocrinology
+236,Other DRG 236 (simulated),Gastroenterology
+241,Other DRG 241 (simulated),Behavioral health
+271,Other DRG 271 (simulated),Pulmonary
+275,Other DRG 275 (simulated),Endocrinology
+291,Heart failure and shock with MCC,Cardiology
+317,Other DRG 317 (simulated),Gastroenterology
+321,Other DRG 321 (simulated),Orthopedics
+324,Other DRG 324 (simulated),Cardiology
+332,Other DRG 332 (simulated),General medicine
+334,Other DRG 334 (simulated),Pulmonary
+356,Other DRG 356 (simulated),Endocrinology
+361,Other DRG 361 (simulated),Pulmonary
+376,Other DRG 376 (simulated),Behavioral health
+378,GI hemorrhage with CC,Gastroenterology
+381,Other DRG 381 (simulated),Nephrology
+392,"Esophagitis, gastroenteritis and digestive disorders",Gastroenterology
+423,Other DRG 423 (simulated),Cardiology
+427,Other DRG 427 (simulated),Infectious disease
+429,Other DRG 429 (simulated),Orthopedics
+431,Other DRG 431 (simulated),General medicine
+432,Other DRG 432 (simulated),Cardiology
+441,Other DRG 441 (simulated),Cardiology
+454,Other DRG 454 (simulated),Infectious disease
+460,Other DRG 460 (simulated),Pulmonary
+470,Major hip and knee joint replacement,Orthopedics
+475,Other DRG 475 (simulated),Behavioral health
+476,Other DRG 476 (simulated),General medicine
+477,Other DRG 477 (simulated),Cardiology
+478,Other DRG 478 (simulated),Pulmonary
+480,Other DRG 480 (simulated),Nephrology
+486,Other DRG 486 (simulated),Cardiology
+487,Other DRG 487 (simulated),Pulmonary
+491,Other DRG 491 (simulated),Endocrinology
+492,Other DRG 492 (simulated),Orthopedics
+506,Other DRG 506 (simulated),Gastroenterology
+513,Other DRG 513 (simulated),Cardiology
+518,Other DRG 518 (simulated),Endocrinology
+529,Other DRG 529 (simulated),Behavioral health
+538,Other DRG 538 (simulated),Behavioral health
+553,Other DRG 553 (simulated),Infectious disease
+571,Other DRG 571 (simulated),Infectious disease
+588,Other DRG 588 (simulated),Nephrology
+595,Other DRG 595 (simulated),Pulmonary
+599,Other DRG 599 (simulated),Endocrinology
+603,Cellulitis,General medicine
+628,Other DRG 628 (simulated),Behavioral health
+635,Other DRG 635 (simulated),Endocrinology
+640,Other DRG 640 (simulated),Pulmonary
+650,Other DRG 650 (simulated),Gastroenterology
+681,Other DRG 681 (simulated),Orthopedics
+683,Renal failure with CC,Nephrology
+690,Kidney and urinary tract infections,Nephrology
+694,Other DRG 694 (simulated),Pulmonary
+706,Other DRG 706 (simulated),Infectious disease
+724,Other DRG 724 (simulated),Infectious disease
+729,Other DRG 729 (simulated),Cardiology
+733,Other DRG 733 (simulated),Infectious disease
+745,Other DRG 745 (simulated),Behavioral health
+746,Other DRG 746 (simulated),General medicine
+768,Other DRG 768 (simulated),Nephrology
+773,Other DRG 773 (simulated),General medicine
+809,Other DRG 809 (simulated),General medicine
+810,Other DRG 810 (simulated),Cardiology
+822,Other DRG 822 (simulated),Nephrology
+834,Other DRG 834 (simulated),Orthopedics
+840,Other DRG 840 (simulated),Nephrology
+865,Other DRG 865 (simulated),Pulmonary
+871,Septicemia or severe sepsis with MCC,Infectious disease
+893,Other DRG 893 (simulated),Gastroenterology
+899,Other DRG 899 (simulated),General medicine
+914,Other DRG 914 (simulated),Endocrinology
+921,Other DRG 921 (simulated),Nephrology
+925,Other DRG 925 (simulated),Behavioral health
+931,Other DRG 931 (simulated),Infectious disease
+942,Other DRG 942 (simulated),Orthopedics
+984,Other DRG 984 (simulated),Nephrology
+991,Other DRG 991 (simulated),Pulmonary
