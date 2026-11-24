@@ -664,6 +664,29 @@
     "Resource monitor",
     "Trial account"
    ]
+  },
+  {
+   "day": 41,
+   "folder": "day41",
+   "title": "LLM APIs from Python: messages and roles, temperature and max tokens, structured JSON, retries, and a token cost log on simulated discharge notes",
+   "tags": [
+    "LLM API",
+    "Python",
+    "Chat completions",
+    "xAI Grok API",
+    "OpenAI-compatible",
+    "Messages and roles",
+    "Temperature",
+    "Max tokens",
+    "Tokens and cost",
+    "Structured output",
+    "JSON schema",
+    "Retries",
+    "Timeouts",
+    "API keys",
+    "Discharge notes",
+    "Mock client"
+   ]
   }
  ]
 }

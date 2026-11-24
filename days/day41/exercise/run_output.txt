@@ -1,0 +1,47 @@
+$ python gen_notes.py
+wrote 30 simulated notes to discharge_notes.csv and the answer key to note_labels.csv
+
+$ python first_call.py --mock
+client: mock | model: mock-extractor | finish_reason: stop
+reply: (mock reply) I got 4 messages in this order: system, user, assistant, user. Your last question was: Why would a care manager want follow-up dates pulled out of discharge notes?
+tokens: 88 in + 44 out = 132 | cost about $0.000220 | latency 0.01 s | retries 0
+
+$ python day41_extract.py --explain-temperature
+T=0.2  7:0.99  14:0.01  3:0.00  next:0.00  two:0.00
+T=0.7  7:0.73  14:0.18  3:0.06  next:0.02  two:0.01
+T=1.0  7:0.59  14:0.22  3:0.10  next:0.05  two:0.04
+T=1.5  7:0.46  14:0.24  3:0.14  next:0.09  two:0.07
+T=0 means always pick the top token (greedy). For extraction, use 0 or close to it.
+
+$ python day41_extract.py --mock --max-tokens 40 --limit 3
+client = mock | model = mock-extractor | base_url = (offline)
+notes = 3 | temperature = 0.0 | max_tokens = 40 | timeout = 30 s
+price card = $1.25/M input, $2.5/M output (cost column is an estimate)
+
+status counts: {'cut_by_max_tokens': 3}
+retries used: 0 | tokens in 568 out 120 | estimated cost $0.0010 (mock tokens, priced as if real)
+latency per call: median 0.01 s, max 0.01 s (includes retry waits)
+
+no valid JSON answers to grade (check the status counts above)
+
+$ python day41_extract.py --mock
+client = mock | model = mock-extractor | base_url = (offline)
+notes = 30 | temperature = 0.0 | max_tokens = 300 | timeout = 30 s
+price card = $1.25/M input, $2.5/M output (cost column is an estimate)
+
+    retry 1/4 after APIError (HTTP 429: mock rate limit: slow down); waiting 0.20 s
+    retry 1/4 after TimeoutError (mock timeout: no answer within the time limit); waiting 0.54 s
+status counts: {'ok': 30}
+retries used: 2 | tokens in 5,679 out 1,836 | estimated cost $0.0117 (mock tokens, priced as if real)
+latency per call: median 0.01 s, max 0.55 s (includes retry waits)
+scale-up: 10,000 notes at this mix = about $3.90
+
+accuracy vs answer key on 30 valid JSON answers (of 30 notes):
+  primary_diagnosis      30/30 = 1.000
+  length_of_stay_days    30/30 = 1.000
+  lives_alone            30/30 = 1.000
+  followup_booked        25/30 = 0.833
+  followup_days          25/30 = 0.833
+  followup_with          25/30 = 0.833
+
+Note: mock = regex, not an LLM. Misses like 'next week' or 'two weeks' are the point: compare with a real run.
