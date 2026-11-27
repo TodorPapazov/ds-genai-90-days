@@ -687,6 +687,27 @@
     "Discharge notes",
     "Mock client"
    ]
+  },
+  {
+   "day": 42,
+   "folder": "day42",
+   "title": "Prompt engineering basics: system prompts, delimiters, few-shot examples, output format rules, and a prompt test set that measures per-field accuracy and cost",
+   "tags": [
+    "Prompt engineering",
+    "System prompt",
+    "Few-shot",
+    "Delimiters",
+    "Prompt injection",
+    "Output format",
+    "Prompt test set",
+    "Evaluation",
+    "Per-field accuracy",
+    "Cost per variant",
+    "LLM API",
+    "Python",
+    "Discharge notes",
+    "Mock client"
+   ]
   }
  ]
 }

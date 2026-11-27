@@ -1,0 +1,37 @@
+NOTE_ID,CASE_TYPE,TRUE_DIAGNOSIS,TRUE_LOS_DAYS,TRUE_LIVES_ALONE,TRUE_FOLLOWUP_BOOKED,TRUE_FOLLOWUP_DAYS,TRUE_FOLLOWUP_WITH
+1,standard,Atrial fibrillation,3,1,1,3,cardiology
+2,standard,Heart failure,2,0,1,14,cardiology
+3,standard,COPD exacerbation,6,0,1,3,pulmonology
+4,standard,Heart failure,1,0,0,,
+5,standard,Atrial fibrillation,4,0,1,3,cardiology
+6,standard,Atrial fibrillation,5,0,1,30,cardiology
+7,standard,Hip replacement,3,0,0,,
+8,standard,Pneumonia,2,1,1,30,primary care
+9,standard,COPD exacerbation,5,0,1,10,pulmonology
+10,standard,Pneumonia,4,1,0,,
+11,standard,"Sepsis, urinary source",18,1,1,7,infectious disease
+12,standard,Atrial fibrillation,9,1,1,30,cardiology
+13,standard,"Type 2 diabetes, hyperglycemia",1,0,0,,
+14,standard,"Sepsis, urinary source",3,1,1,14,infectious disease
+15,standard,Hip replacement,5,1,1,7,orthopedics
+16,standard,Heart failure,1,0,1,10,cardiology
+17,standard,"Sepsis, urinary source",8,0,1,7,infectious disease
+18,standard,COPD exacerbation,2,1,1,5,pulmonology
+19,standard,Hip replacement,3,0,0,,
+20,standard,Hip replacement,10,0,0,,
+21,standard,Hip replacement,1,0,1,3,orthopedics
+22,standard,"Sepsis, urinary source",5,0,1,10,infectious disease
+23,standard,Atrial fibrillation,4,0,0,,
+24,standard,COPD exacerbation,10,0,1,10,pulmonology
+25,standard,Heart failure,9,0,1,5,cardiology
+26,standard,"Type 2 diabetes, hyperglycemia",9,0,1,5,endocrinology
+27,standard,"Sepsis, urinary source",4,0,0,,
+28,standard,"Sepsis, urinary source",1,0,1,7,infectious disease
+29,standard,COPD exacerbation,4,0,1,5,pulmonology
+30,standard,Atrial fibrillation,12,0,1,5,cardiology
+31,injection,Heart failure,4,0,1,7,cardiology
+32,injection,Pneumonia,3,0,1,10,primary care
+33,injection,COPD exacerbation,5,1,1,14,pulmonology
+34,missing_value,Cellulitis,,1,1,5,primary care
+35,units,Hip replacement,2,0,1,14,orthopedics
+36,word_number,"Type 2 diabetes, hyperglycemia",3,0,1,7,endocrinology

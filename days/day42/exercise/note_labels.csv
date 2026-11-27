@@ -1,0 +1,31 @@
+NOTE_ID,TRUE_DIAGNOSIS,TRUE_LOS_DAYS,TRUE_LIVES_ALONE,TRUE_FOLLOWUP_BOOKED,TRUE_FOLLOWUP_DAYS,TRUE_FOLLOWUP_WITH
+1,Atrial fibrillation,3,1,1,3,cardiology
+2,Heart failure,2,0,1,14,cardiology
+3,COPD exacerbation,6,0,1,3,pulmonology
+4,Heart failure,1,0,0,,
+5,Atrial fibrillation,4,0,1,3,cardiology
+6,Atrial fibrillation,5,0,1,30,cardiology
+7,Hip replacement,3,0,0,,
+8,Pneumonia,2,1,1,30,primary care
+9,COPD exacerbation,5,0,1,10,pulmonology
+10,Pneumonia,4,1,0,,
+11,"Sepsis, urinary source",18,1,1,7,infectious disease
+12,Atrial fibrillation,9,1,1,30,cardiology
+13,"Type 2 diabetes, hyperglycemia",1,0,0,,
+14,"Sepsis, urinary source",3,1,1,14,infectious disease
+15,Hip replacement,5,1,1,7,orthopedics
+16,Heart failure,1,0,1,10,cardiology
+17,"Sepsis, urinary source",8,0,1,7,infectious disease
+18,COPD exacerbation,2,1,1,5,pulmonology
+19,Hip replacement,3,0,0,,
+20,Hip replacement,10,0,0,,
+21,Hip replacement,1,0,1,3,orthopedics
+22,"Sepsis, urinary source",5,0,1,10,infectious disease
+23,Atrial fibrillation,4,0,0,,
+24,COPD exacerbation,10,0,1,10,pulmonology
+25,Heart failure,9,0,1,5,cardiology
+26,"Type 2 diabetes, hyperglycemia",9,0,1,5,endocrinology
+27,"Sepsis, urinary source",4,0,0,,
+28,"Sepsis, urinary source",1,0,1,7,infectious disease
+29,COPD exacerbation,4,0,1,5,pulmonology
+30,Atrial fibrillation,12,0,1,5,cardiology
